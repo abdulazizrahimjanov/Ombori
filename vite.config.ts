@@ -92,5 +92,8 @@ export default defineConfig(() => {
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       forwardConsole: false,
     },
+    preview: {
+      allowedHosts: ['ombor-hvw6.onrender.com'],
+    },
   };
 });
