@@ -15,28 +15,42 @@ workflows:
     scripts:
       - name: Install npm dependencies
         script: |
-          echo "Environment: $(node -p 'process.platform + "-" + process.arch + " " + process.version'), npm $(npm --version)"
+          echo "=== Brend Ombor iOS Build: $(node -p 'process.platform + "-" + process.arch + " " + process.version'), npm $(npm --version) ==="
           unset npm_config_omit NPM_CONFIG_OMIT
           npm ci --include=optional --no-audit --no-fund || npm install --include=optional --no-audit --no-fund
-          ARCH=$(node -p "process.arch")
-          if [ "$(uname -s)" = "Darwin" ]; then
+          verify_native() {
             node -e "
-              const arch = process.arch;
-              for (const pkg of [
-                '@rolldown/binding-darwin-' + arch,
-                '@tailwindcss/oxide-darwin-' + arch,
-                'lightningcss-darwin-' + arch,
-                '@esbuild/darwin-' + arch
-              ]) {
-                require.resolve(pkg + '/package.json');
-              }
-              console.log('Verified all darwin-' + arch + ' native bindings');
-            " || {
-              echo "Native macOS bindings missing; performing clean npm reinstall (removing node_modules and package-lock.json)..."
-              rm -rf node_modules package-lock.json
-              npm install --include=optional --no-audit --no-fund
-              node -e "require.resolve('@rolldown/binding-darwin-' + process.arch + '/package.json')"
-            }
+              Promise.all([
+                import('rolldown'),
+                import('lightningcss'),
+                import('@tailwindcss/oxide'),
+                import('esbuild')
+              ]).then(() => {
+                console.log('All native build bindings loaded successfully!');
+              }).catch((err) => {
+                console.error('Native binding check failed:', err.message);
+                process.exit(1);
+              });
+            "
+          }
+          if ! verify_native; then
+            echo "Native bindings missing; clearing node_modules and package-lock.json and reinstalling..."
+            rm -rf node_modules package-lock.json
+            npm install --include=optional --no-audit --no-fund
+          fi
+          if ! verify_native && [ "$(uname -s)" = "Darwin" ]; then
+            echo "Force-installing darwin-$(node -p process.arch) native bindings..."
+            ARCH=$(node -p "process.arch")
+            ROLLDOWN_VER=$(node -p "require('./node_modules/rolldown/package.json').version")
+            OXIDE_VER=$(node -p "require('./node_modules/@tailwindcss/oxide/package.json').version")
+            LIGHTNING_VER=$(node -p "require('./node_modules/lightningcss/package.json').version")
+            ESBUILD_VER=$(node -p "require('./node_modules/esbuild/package.json').version")
+            npm install --no-save --include=optional --no-audit --no-fund \
+              "@rolldown/binding-darwin-${ARCH}@${ROLLDOWN_VER}" \
+              "@tailwindcss/oxide-darwin-${ARCH}@${OXIDE_VER}" \
+              "lightningcss-darwin-${ARCH}@${LIGHTNING_VER}" \
+              "@esbuild/darwin-${ARCH}@${ESBUILD_VER}"
+            verify_native
           fi
       - name: Build React + Vite web bundle
         script: |
@@ -113,27 +127,42 @@ workflows:
     scripts:
       - name: Install npm dependencies
         script: |
-          echo "Environment: $(node -p 'process.platform + "-" + process.arch + " " + process.version'), npm $(npm --version)"
+          echo "=== Brend Ombor iOS Build: $(node -p 'process.platform + "-" + process.arch + " " + process.version'), npm $(npm --version) ==="
           unset npm_config_omit NPM_CONFIG_OMIT
           npm ci --include=optional --no-audit --no-fund || npm install --include=optional --no-audit --no-fund
-          if [ "$(uname -s)" = "Darwin" ]; then
+          verify_native() {
             node -e "
-              const arch = process.arch;
-              for (const pkg of [
-                '@rolldown/binding-darwin-' + arch,
-                '@tailwindcss/oxide-darwin-' + arch,
-                'lightningcss-darwin-' + arch,
-                '@esbuild/darwin-' + arch
-              ]) {
-                require.resolve(pkg + '/package.json');
-              }
-              console.log('Verified all darwin-' + arch + ' native bindings');
-            " || {
-              echo "Native macOS bindings missing; performing clean npm reinstall (removing node_modules and package-lock.json)..."
-              rm -rf node_modules package-lock.json
-              npm install --include=optional --no-audit --no-fund
-              node -e "require.resolve('@rolldown/binding-darwin-' + process.arch + '/package.json')"
-            }
+              Promise.all([
+                import('rolldown'),
+                import('lightningcss'),
+                import('@tailwindcss/oxide'),
+                import('esbuild')
+              ]).then(() => {
+                console.log('All native build bindings loaded successfully!');
+              }).catch((err) => {
+                console.error('Native binding check failed:', err.message);
+                process.exit(1);
+              });
+            "
+          }
+          if ! verify_native; then
+            echo "Native bindings missing; clearing node_modules and package-lock.json and reinstalling..."
+            rm -rf node_modules package-lock.json
+            npm install --include=optional --no-audit --no-fund
+          fi
+          if ! verify_native && [ "$(uname -s)" = "Darwin" ]; then
+            echo "Force-installing darwin-$(node -p process.arch) native bindings..."
+            ARCH=$(node -p "process.arch")
+            ROLLDOWN_VER=$(node -p "require('./node_modules/rolldown/package.json').version")
+            OXIDE_VER=$(node -p "require('./node_modules/@tailwindcss/oxide/package.json').version")
+            LIGHTNING_VER=$(node -p "require('./node_modules/lightningcss/package.json').version")
+            ESBUILD_VER=$(node -p "require('./node_modules/esbuild/package.json').version")
+            npm install --no-save --include=optional --no-audit --no-fund \
+              "@rolldown/binding-darwin-${ARCH}@${ROLLDOWN_VER}" \
+              "@tailwindcss/oxide-darwin-${ARCH}@${OXIDE_VER}" \
+              "lightningcss-darwin-${ARCH}@${LIGHTNING_VER}" \
+              "@esbuild/darwin-${ARCH}@${ESBUILD_VER}"
+            verify_native
           fi
       - name: Build React + Vite web bundle
         script: |
