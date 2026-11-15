@@ -15,11 +15,28 @@ workflows:
     scripts:
       - name: Install npm dependencies
         script: |
+          echo "Environment: $(node -p 'process.platform + "-" + process.arch + " " + process.version'), npm $(npm --version)"
+          unset npm_config_omit NPM_CONFIG_OMIT
           npm ci --include=optional --no-audit --no-fund || npm install --include=optional --no-audit --no-fund
-          if ! node -e "require.resolve('@rolldown/binding-darwin-arm64')" 2>/dev/null; then
-            echo "Restoring macOS ARM64 native bindings..."
-            rm -rf node_modules
-            npm install --include=optional --no-audit --no-fund
+          ARCH=$(node -p "process.arch")
+          if [ "$(uname -s)" = "Darwin" ]; then
+            node -e "
+              const arch = process.arch;
+              for (const pkg of [
+                '@rolldown/binding-darwin-' + arch,
+                '@tailwindcss/oxide-darwin-' + arch,
+                'lightningcss-darwin-' + arch,
+                '@esbuild/darwin-' + arch
+              ]) {
+                require.resolve(pkg + '/package.json');
+              }
+              console.log('Verified all darwin-' + arch + ' native bindings');
+            " || {
+              echo "Native macOS bindings missing; performing clean npm reinstall (removing node_modules and package-lock.json)..."
+              rm -rf node_modules package-lock.json
+              npm install --include=optional --no-audit --no-fund
+              node -e "require.resolve('@rolldown/binding-darwin-' + process.arch + '/package.json')"
+            }
           fi
       - name: Build React + Vite web bundle
         script: |
@@ -47,7 +64,8 @@ workflows:
               -derivedDataPath build/ios/DerivedData \
               CODE_SIGNING_ALLOWED=NO \
               CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGN_IDENTITY=""
+              CODE_SIGN_IDENTITY="" \
+              DEVELOPMENT_TEAM=""
           else
             xcodebuild -resolvePackageDependencies -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME"
             xcodebuild build \
@@ -58,7 +76,8 @@ workflows:
               -derivedDataPath build/ios/DerivedData \
               CODE_SIGNING_ALLOWED=NO \
               CODE_SIGNING_REQUIRED=NO \
-              CODE_SIGN_IDENTITY=""
+              CODE_SIGN_IDENTITY="" \
+              DEVELOPMENT_TEAM=""
           fi
           APP_PATH=$(find build/ios/DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
           if [ -z "$APP_PATH" ]; then
@@ -94,11 +113,27 @@ workflows:
     scripts:
       - name: Install npm dependencies
         script: |
+          echo "Environment: $(node -p 'process.platform + "-" + process.arch + " " + process.version'), npm $(npm --version)"
+          unset npm_config_omit NPM_CONFIG_OMIT
           npm ci --include=optional --no-audit --no-fund || npm install --include=optional --no-audit --no-fund
-          if ! node -e "require.resolve('@rolldown/binding-darwin-arm64')" 2>/dev/null; then
-            echo "Restoring macOS ARM64 native bindings..."
-            rm -rf node_modules
-            npm install --include=optional --no-audit --no-fund
+          if [ "$(uname -s)" = "Darwin" ]; then
+            node -e "
+              const arch = process.arch;
+              for (const pkg of [
+                '@rolldown/binding-darwin-' + arch,
+                '@tailwindcss/oxide-darwin-' + arch,
+                'lightningcss-darwin-' + arch,
+                '@esbuild/darwin-' + arch
+              ]) {
+                require.resolve(pkg + '/package.json');
+              }
+              console.log('Verified all darwin-' + arch + ' native bindings');
+            " || {
+              echo "Native macOS bindings missing; performing clean npm reinstall (removing node_modules and package-lock.json)..."
+              rm -rf node_modules package-lock.json
+              npm install --include=optional --no-audit --no-fund
+              node -e "require.resolve('@rolldown/binding-darwin-' + process.arch + '/package.json')"
+            }
           fi
       - name: Build React + Vite web bundle
         script: |
@@ -118,9 +153,7 @@ workflows:
           xcode-project use-profiles
       - name: Increment iOS build number
         script: |
-          cd ios/App
-          agvtool new-version -all "${CM_BUILD_NUMBER:-1}"
-          cd ../..
+          sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = ${CM_BUILD_NUMBER:-1};/g" ios/App/App.xcodeproj/project.pbxproj
       - name: Build signed IPA for App Store
         script: |
           if [ -d "$XCODE_WORKSPACE" ]; then
