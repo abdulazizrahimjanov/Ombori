@@ -87,7 +87,7 @@ define(['./workbox-afac4cd2'], (function (workbox) { 'use strict';
     "revision": "ca3fcbe66f4f888bb5f5a0fef06b5a7a"
   }, {
     "url": "index.html",
-    "revision": "07b257dd9cc700a386a632d6f812f096"
+    "revision": "34ea8725404c48239b917091b1d2afdc"
   }, {
     "url": "apple-touch-icon.png",
     "revision": "f57ab7b0e6d79650c34dd60d4846b4a8"
@@ -107,10 +107,10 @@ define(['./workbox-afac4cd2'], (function (workbox) { 'use strict';
     "url": "assets/product_apparel_jacket_1794644386775-DzyP-opd.jpg",
     "revision": null
   }, {
-    "url": "assets/index-HmL7Zh66.js",
+    "url": "assets/index-Dz_luyt9.css",
     "revision": null
   }, {
-    "url": "assets/index-BZ6rsrMt.css",
+    "url": "assets/index-B9WGGQpm.js",
     "revision": null
   }, {
     "url": "assets/aistudio/IMG_20261007_140535_653_64e97dff.jpg",

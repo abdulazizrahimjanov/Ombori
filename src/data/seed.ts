@@ -194,9 +194,9 @@ export function createSeedDatabase(): DatabaseSnapshot {
     {
       id: 'usr-owner',
       name: 'Sardorbek Karimov',
-      phone: '+998901112233',
-      password: '123456',
-      pin: '1111',
+      phone: '+998889260404',
+      password: '51111',
+      pin: '51111',
       roleId: 'owner',
       assignedStoreIds: [store1Id, store2Id],
       isActive: true,
@@ -727,6 +727,8 @@ export function createSeedDatabase(): DatabaseSnapshot {
   ];
 
   const employees: Employee[] = [
+    { id: 'emp-owner', userId: 'usr-owner', name: 'Sardorbek Karimov', phone: '+998889260404', roleId: 'owner', baseSalary: 0, commissionPercent: 0, schedule: 'Doimiy boshqaruv', hiredAt: daysAgo(365), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'emp-admin', userId: 'usr-admin', name: 'Dilnoza Rahimova', phone: '+998902223344', roleId: 'admin', baseSalary: 6500000, commissionPercent: 1.0, schedule: 'Du–Sha, 09:00–19:00', hiredAt: daysAgo(240), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
     { id: 'emp-1', userId: 'usr-manager', name: 'Jasur Alimov', phone: '+998903334455', roleId: 'manager', baseSalary: 5500000, commissionPercent: 1.5, schedule: 'Du–Sha, 09:00–19:00', hiredAt: daysAgo(180), storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
     { id: 'emp-2', userId: 'usr-cashier', name: 'Madina Toshmatova', phone: '+998904445566', roleId: 'cashier', baseSalary: 3800000, commissionPercent: 2.0, schedule: '2/2 smena, 09:00–21:00', hiredAt: daysAgo(120), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
     { id: 'emp-3', userId: 'usr-warehouse', name: 'Bobur Xolmatov', phone: '+998905556677', roleId: 'warehouse', baseSalary: 4200000, commissionPercent: 0.5, schedule: 'Du–Ju, 09:00–18:00', hiredAt: daysAgo(90), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },

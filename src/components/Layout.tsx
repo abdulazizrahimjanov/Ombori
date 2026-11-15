@@ -676,12 +676,12 @@ export const Layout: React.FC = () => {
                 <input
                   type="password"
                   inputMode="numeric"
-                  maxLength={4}
+                  maxLength={6}
                   autoFocus
                   value={pinValue}
-                  onChange={(e) => setPinValue(e.target.value)}
-                  className="w-full h-12 text-center text-xl tracking-[0.5em] font-mono rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-600"
-                  placeholder="••••"
+                  onChange={(e) => setPinValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="w-full h-12 text-center text-xl tracking-[0.45em] font-mono rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  placeholder="•••••"
                 />
               </div>
               {pinError && <p className="text-xs text-red-600 font-medium">{pinError}</p>}
@@ -768,15 +768,15 @@ export const Layout: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-slate-500 mb-1">Yangi 4-xonali PIN-kod</label>
+                <label className="block text-slate-500 mb-1">Yangi PIN-kod (4–6 raqam)</label>
                 <input
                   type="text"
                   inputMode="numeric"
-                  maxLength={4}
+                  maxLength={6}
                   value={newPinInput}
-                  onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                  onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   className="w-full h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm font-mono tracking-widest text-center"
-                  placeholder="1234"
+                  placeholder="51111"
                 />
               </div>
               {credError && <p className="text-xs text-red-600 font-medium">{credError}</p>}

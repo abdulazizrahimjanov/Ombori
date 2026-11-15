@@ -57,7 +57,7 @@ export const uz = {
   },
   auth: {
     loginTitle: 'Tizimga kirish',
-    loginSubtitle: "Telefon raqamingiz va parolingizni kiriting",
+    loginSubtitle: "Telefon raqamingiz va parol yoki PIN-kodingizni kiriting",
     phone: 'Telefon raqam',
     password: 'Parol',
     pin: 'Tezkor PIN',
@@ -67,7 +67,7 @@ export const uz = {
     logout: 'Chiqish',
     invalidCredentials: "Telefon raqam yoki parol noto'g'ri",
     invalidPin: "PIN-kod noto'g'ri",
-    enterPin: '4 xonali PIN-kodni kiriting',
+    enterPin: 'PIN-kodni kiriting (4–6 raqam)',
     roles: {
       owner: 'Egasi',
       admin: 'Administrator',

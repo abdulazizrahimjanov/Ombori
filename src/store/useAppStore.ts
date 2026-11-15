@@ -408,6 +408,60 @@ export const useAppStore = create<AppState>((set, get) => ({
       db.version = 3;
       changed = true;
     }
+    if ((db.version ?? 1) < 4) {
+      const owner = db.users.find((u) => u.id === 'usr-owner');
+      if (owner) {
+        const cleanOwnerPhone = owner.phone.replace(/\s+/g, '');
+        if (cleanOwnerPhone === '+998901112233' || (owner.password === '123456' && owner.pin === '1111')) {
+          owner.phone = '+998889260404';
+          owner.password = '51111';
+          owner.pin = '51111';
+          owner.updatedAt = new Date().toISOString();
+        }
+      }
+      if (!db.employees.some((e) => e.userId === 'usr-owner') && owner) {
+        db.employees.unshift({
+          id: 'emp-owner',
+          userId: owner.id,
+          name: owner.name,
+          phone: owner.phone,
+          roleId: owner.roleId,
+          baseSalary: 0,
+          commissionPercent: 0,
+          schedule: 'Doimiy boshqaruv',
+          hiredAt: owner.createdAt,
+          storeId: owner.storeId,
+          createdAt: owner.createdAt,
+          updatedAt: new Date().toISOString(),
+          createdBy: owner.id,
+        });
+      } else {
+        const ownerEmp = db.employees.find((e) => e.userId === 'usr-owner');
+        if (ownerEmp && owner) {
+          ownerEmp.phone = owner.phone;
+        }
+      }
+      const adminUser = db.users.find((u) => u.id === 'usr-admin');
+      if (adminUser && !db.employees.some((e) => e.userId === 'usr-admin')) {
+        db.employees.splice(1, 0, {
+          id: 'emp-admin',
+          userId: adminUser.id,
+          name: adminUser.name,
+          phone: adminUser.phone,
+          roleId: adminUser.roleId,
+          baseSalary: 6500000,
+          commissionPercent: 1.0,
+          schedule: 'Du–Sha, 09:00–19:00',
+          hiredAt: adminUser.createdAt,
+          storeId: adminUser.storeId,
+          createdAt: adminUser.createdAt,
+          updatedAt: new Date().toISOString(),
+          createdBy: 'usr-owner',
+        });
+      }
+      db.version = 4;
+      changed = true;
+    }
     if (changed) {
       await repository.save(db);
     }
@@ -461,10 +515,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   loginWithPhone: (phone, password) => {
     const { db } = get();
     if (!db) return false;
-    const clean = phone.replace(/\s+/g, '');
-    const user = db.users.find(
-      (u) => u.isActive && u.phone.replace(/\s+/g, '') === clean && u.password === password
-    );
+    const digitsOnly = (v: string) => v.replace(/\D/g, '');
+    const inputDigits = digitsOnly(phone);
+    const inputPass = password.trim();
+    const user = db.users.find((u) => {
+      if (!u.isActive) return false;
+      const userDigits = digitsOnly(u.phone);
+      const phoneMatches =
+        userDigits === inputDigits ||
+        (inputDigits.length === 9 && userDigits.endsWith(inputDigits)) ||
+        (userDigits.length === 9 && inputDigits.endsWith(userDigits));
+      return phoneMatches && (u.password === inputPass || u.pin === inputPass);
+    });
     if (!user) return false;
     localStorage.setItem(SESSION_KEY, user.id);
     set({
@@ -1935,8 +1997,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     if (input.newPin !== undefined) {
       const cleanPin = input.newPin.trim();
-      if (!/^\d{4}$/.test(cleanPin)) {
-        return { ok: false, error: 'PIN-kod aniq 4 ta raqamdan iborat bo\'lishi kerak' };
+      if (!/^\d{4,6}$/.test(cleanPin)) {
+        return { ok: false, error: 'PIN-kod 4 dan 6 tagacha raqamdan iborat bo\'lishi kerak' };
       }
       const duplicate = nextDb.users.find((u) => u.id !== userId && u.pin === cleanPin && u.isActive);
       if (duplicate) {

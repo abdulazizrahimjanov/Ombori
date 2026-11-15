@@ -75,7 +75,7 @@ export const MenuPage: React.FC = () => {
       items: [
         { label: 'Hisobotlar', sublabel: 'Savdo, ABC, Audit', to: '/reports', icon: BarChart3, permission: 'view_reports', accent: 'text-blue-600 bg-blue-50 dark:bg-blue-950/60' },
         { label: 'Moliya', sublabel: 'Hisoblar, xarajat, P&L', to: '/finance', icon: Wallet, permission: 'view_finance', accent: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60' },
-        { label: 'Xodimlar va KPI', sublabel: 'Smena va oylik', to: '/employees', icon: UserCheck, permission: 'view_employees', accent: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-950/60' },
+        { label: 'Xodimlar va Rollar', sublabel: 'Nomer, PIN-kod, rol va KPI', to: '/employees', icon: UserCheck, permission: 'view_employees', accent: 'text-indigo-600 bg-indigo-50 dark:bg-indigo-950/60' },
         { label: 'Sozlamalar', sublabel: "Do'kon, chek, to'lovlar", to: '/settings', icon: Settings, permission: 'manage_settings', accent: 'text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800' },
       ],
     },

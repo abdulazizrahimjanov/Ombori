@@ -57,7 +57,7 @@ export const ru = {
   },
   auth: {
     loginTitle: 'Вход в систему',
-    loginSubtitle: 'Введите номер телефона и пароль',
+    loginSubtitle: 'Введите номер телефона и пароль или PIN-код',
     phone: 'Номер телефона',
     password: 'Пароль',
     pin: 'Быстрый PIN',
@@ -67,7 +67,7 @@ export const ru = {
     logout: 'Выйти',
     invalidCredentials: 'Неверный телефон или пароль',
     invalidPin: 'Неверный PIN-код',
-    enterPin: 'Введите 4-значный PIN-код',
+    enterPin: 'Введите PIN-код (4–6 цифр)',
     roles: {
       owner: 'Владелец',
       admin: 'Администратор',

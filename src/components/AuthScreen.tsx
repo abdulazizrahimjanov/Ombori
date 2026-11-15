@@ -51,27 +51,27 @@ export const AuthScreen: React.FC<{ onOpenCatalog?: () => void }> = ({ onOpenCat
         transition={{ duration: 0.35 }}
         className="relative z-10 flex items-center justify-between max-w-6xl w-full mx-auto gap-2"
       >
-        <div className="flex items-center gap-2.5 min-w-0">
+        <div className="flex items-center gap-2 min-w-0">
           <img
             src={BRAND_LOGO_SRC}
             alt={BRAND_NAME}
-            className="w-10 h-10 rounded-full object-cover bg-white ring-1 ring-slate-200 dark:ring-slate-700 shadow-xs shrink-0"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover bg-white ring-1 ring-slate-200 dark:ring-slate-700 shadow-xs shrink-0"
           />
-          <span className="font-display text-base sm:text-lg font-extrabold tracking-tight text-slate-900 dark:text-white whitespace-nowrap truncate">
+          <span className="font-display text-xs sm:text-base font-extrabold tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
             {BRAND_NAME}
           </span>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {onOpenCatalog && (
             <motion.button
               whileTap={{ scale: 0.96 }}
               type="button"
               onClick={onOpenCatalog}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xs px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap transition-colors shadow-2xs"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xs px-2.5 sm:px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 whitespace-nowrap transition-colors shadow-2xs"
             >
               <StoreIcon className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-              <span>{t.nav.storefront}</span>
+              <span className="hidden xs:inline sm:inline">{t.nav.storefront}</span>
             </motion.button>
           )}
           <PWAInstallButton />
@@ -142,7 +142,7 @@ export const AuthScreen: React.FC<{ onOpenCatalog?: () => void }> = ({ onOpenCat
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-600 focus:bg-white dark:focus:bg-slate-900 transition-all"
-                  placeholder="+998 90 123 45 67"
+                  placeholder="+998 88 926 04 04"
                   autoComplete="tel"
                   required
                 />
@@ -151,7 +151,7 @@ export const AuthScreen: React.FC<{ onOpenCatalog?: () => void }> = ({ onOpenCat
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                {t.auth.password}
+                {t.auth.password} / PIN-kod
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -160,7 +160,7 @@ export const AuthScreen: React.FC<{ onOpenCatalog?: () => void }> = ({ onOpenCat
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full h-11 pl-10 pr-11 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-600 focus:bg-white dark:focus:bg-slate-900 transition-all"
-                  placeholder="••••••"
+                  placeholder="•••••"
                   autoComplete="current-password"
                   required
                 />
