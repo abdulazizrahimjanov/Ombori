@@ -1,6 +1,6 @@
 workflows:
   ios-unsigned:
-    name: Brend Ombor iOS (Unsigned Verification Build)
+    name: SHU BREND OMBOR iOS (Unsigned Verification Build)
     instance_type: mac_mini_m2
     max_build_duration: 60
     environment:
@@ -105,7 +105,7 @@ workflows:
       - build/ios/DerivedData/Build/Products/Release-iphoneos/*.app
 
   ios-appstore:
-    name: Brend Ombor iOS (Signed App Store / TestFlight)
+    name: SHU BREND OMBOR iOS (Signed App Store / TestFlight)
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:

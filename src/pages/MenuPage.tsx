@@ -19,6 +19,7 @@ import {
   Globe,
   Settings,
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import { useAppStore } from '../store/useAppStore';
 import { Permission } from '../types/models';
 
@@ -92,14 +93,19 @@ export const MenuPage: React.FC = () => {
               {grp.title}
             </h2>
             <div className="grid grid-cols-2 gap-2.5">
-              {visibleItems.map((it) => {
+              {visibleItems.map((it, idx) => {
                 const Icon = it.icon;
                 return (
-                  <button
+                  <motion.button
                     key={`${grp.title}-${it.label}`}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2, delay: idx * 0.03 }}
+                    whileHover={{ y: -2 }}
+                    whileTap={{ scale: 0.98 }}
                     type="button"
                     onClick={() => navigate(it.to)}
-                    className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3.5 text-left hover:border-blue-400 dark:hover:border-blue-600 active:scale-[0.99] transition-all shadow-xs flex items-start gap-3"
+                    className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-3.5 text-left hover:border-blue-400 dark:hover:border-blue-600 transition-colors shadow-xs flex items-start gap-3 cursor-pointer"
                   >
                     <div
                       className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
@@ -118,7 +124,7 @@ export const MenuPage: React.FC = () => {
                         </div>
                       )}
                     </div>
-                  </button>
+                  </motion.button>
                 );
               })}
             </div>

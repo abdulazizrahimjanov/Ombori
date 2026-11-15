@@ -10,6 +10,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { ShoppingCart, AlertTriangle, Sparkles, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { motion } from 'motion/react';
 import { useAppStore } from '../store/useAppStore';
 import { formatMoney, formatShortMoney, useT } from '../i18n';
 
@@ -220,10 +221,14 @@ export const DashboardPage: React.FC = () => {
 
       {/* KPI Strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        {kpis.map((k) => (
-          <div
+        {kpis.map((k, idx) => (
+          <motion.div
             key={k.label}
-            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, delay: idx * 0.04 }}
+            whileHover={{ y: -2 }}
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 shadow-2xs transition-shadow hover:shadow-md"
           >
             <div className="text-xs text-slate-500 dark:text-slate-400">{k.label}</div>
             <div className="font-mono tabular-nums text-lg sm:text-xl font-bold text-slate-900 dark:text-white mt-1.5 truncate">
@@ -238,7 +243,7 @@ export const DashboardPage: React.FC = () => {
               <span>{k.delta >= 0 ? `+${k.delta}%` : `${k.delta}%`}</span>
               <span className="text-slate-400 font-sans">· {t.dashboard.vsPrev}</span>
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
 

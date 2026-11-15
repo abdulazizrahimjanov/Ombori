@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Brend Ombor</string>
+        <string>SHU BREND OMBOR</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -67,8 +67,8 @@
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Brend Ombor shtrix-kodlarni skanerlash va mahsulot rasmlarini olish uchun kameradan foydalanadi.</string>
+	<string>SHU BREND OMBOR shtrix-kodlarni skanerlash va mahsulot rasmlarini olish uchun kameradan foydalanadi.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Brend Ombor mahsulot rasmlarini yuklash uchun galereyadan foydalanadi.</string>
+	<string>SHU BREND OMBOR mahsulot rasmlarini yuklash uchun galereyadan foydalanadi.</string>
 </dict>
 </plist>

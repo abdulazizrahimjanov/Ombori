@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Check, Store, Package, UserPlus, ShoppingCart, X } from 'lucide-react';
+import { motion } from 'motion/react';
 import { useAppStore, uid } from '../store/useAppStore';
 import { generateEAN13 } from '../utils/barcode';
+import { BRAND_LOGO_SRC, BRAND_NAME } from './BrandLogo';
 
 export const OnboardingWizard: React.FC<{ onGoToPos: () => void }> = ({ onGoToPos }) => {
   const db = useAppStore((s) => s.db);
@@ -129,16 +131,32 @@ export const OnboardingWizard: React.FC<{ onGoToPos: () => void }> = ({ onGoToPo
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 14 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+        className="w-full max-w-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-2xl"
+      >
         <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-          <div>
-            <h2 className="font-display text-lg font-bold text-slate-900 dark:text-white">
-              Tezkor ishga tushirish ustasi
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {step}-qadam / 4 · Do'kon → Mahsulot → Kassir → Birinchi sotuv
-            </p>
+          <div className="flex items-center gap-3">
+            <img
+              src={BRAND_LOGO_SRC}
+              alt={BRAND_NAME}
+              className="w-10 h-10 rounded-full object-cover bg-white ring-1 ring-slate-200 dark:ring-slate-700 shrink-0"
+            />
+            <div>
+              <h2 className="font-display text-lg font-bold text-slate-900 dark:text-white">
+                {BRAND_NAME} · Tezkor ishga tushirish
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {step}-qadam / 4 · Do'kon → Mahsulot → Kassir → Birinchi sotuv
+              </p>
+            </div>
           </div>
           <button
             type="button"
@@ -350,7 +368,7 @@ export const OnboardingWizard: React.FC<{ onGoToPos: () => void }> = ({ onGoToPo
             </button>
           </div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 };

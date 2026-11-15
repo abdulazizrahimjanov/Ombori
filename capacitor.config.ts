@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.brendombor.app',
-  appName: 'Brend Ombor',
+  appName: 'SHU BREND OMBOR',
   webDir: 'dist',
   server: {
     androidScheme: 'https',

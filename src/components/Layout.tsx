@@ -28,10 +28,12 @@ import {
   Check,
   ChevronRight,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '../store/useAppStore';
 import { useT } from '../i18n';
 import { Permission } from '../types/models';
 import { PWAInstallButton, OfflineIndicator } from './PWAInstallButton';
+import { BRAND_LOGO_SRC, BRAND_NAME } from './BrandLogo';
 
 interface NavItem {
   to: string;
@@ -170,9 +172,13 @@ export const Layout: React.FC = () => {
       {/* Desktop Sidebar */}
       <aside className="no-print hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 z-30">
         <div className="h-14 px-5 flex items-center gap-2.5 border-b border-slate-200 dark:border-slate-800 shrink-0">
-          <img src="/icon.svg" alt="SHU BREND OMBOR" className="w-7 h-7 rounded-md shrink-0" />
-          <span className="font-display text-sm font-bold tracking-tight text-slate-900 dark:text-white whitespace-nowrap truncate">
-            SHU BREND OMBOR
+          <img
+            src={BRAND_LOGO_SRC}
+            alt={BRAND_NAME}
+            className="w-8 h-8 rounded-full object-cover bg-white ring-1 ring-slate-200 dark:ring-slate-700 shadow-2xs shrink-0"
+          />
+          <span className="font-display text-sm font-extrabold tracking-tight text-slate-900 dark:text-white whitespace-nowrap truncate">
+            {BRAND_NAME}
           </span>
         </div>
 
@@ -271,6 +277,11 @@ export const Layout: React.FC = () => {
         {!isTransactionDetail && (
           <header className="no-print sticky top-0 z-20 h-14 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-100 dark:border-slate-800 px-4 lg:px-6 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
+              <img
+                src={BRAND_LOGO_SRC}
+                alt={BRAND_NAME}
+                className="lg:hidden w-8 h-8 rounded-full object-cover bg-white ring-1 ring-slate-200 dark:ring-slate-700 shadow-2xs shrink-0"
+              />
               <h1 className="font-display text-xl lg:text-2xl font-bold text-slate-900 dark:text-white truncate tracking-tight">
                 {headerInfo.title}
               </h1>
@@ -379,7 +390,14 @@ export const Layout: React.FC = () => {
             isTransactionDetail ? 'p-0' : 'p-3 sm:p-4 lg:p-6 max-w-[1440px]'
           }`}
         >
-          <Outlet />
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+          >
+            <Outlet />
+          </motion.div>
         </main>
       </div>
 
@@ -423,16 +441,25 @@ export const Layout: React.FC = () => {
       </nav>
 
       {/* Avatar Profile Bottom Sheet */}
-      {avatarSheetOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center"
-          onClick={() => setAvatarSheetOpen(false)}
-        >
-          <div
-            className="w-full sm:max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-2xl p-5 pb-safe space-y-4 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
+      <AnimatePresence>
+        {avatarSheetOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center"
+            onClick={() => setAvatarSheetOpen(false)}
           >
-            <div className="w-10 h-1 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto sm:hidden" />
+            <motion.div
+              initial={{ opacity: 0, y: 36, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 24, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+              className="w-full sm:max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-2xl p-5 pb-safe space-y-4 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-10 h-1 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto sm:hidden" />
 
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
@@ -607,14 +634,28 @@ export const Layout: React.FC = () => {
                 <span>{theme === 'dark' ? 'Kunduzgi' : 'Tungi'}</span>
               </button>
             </div>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Quick PIN Switch Modal */}
-      {pinModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl">
+      <AnimatePresence>
+        {pinModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 12 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 26 }}
+              className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl"
+            >
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-display text-base font-semibold">{t.auth.switchCashier}</h3>
               <button
@@ -642,26 +683,37 @@ export const Layout: React.FC = () => {
                   className="w-full h-12 text-center text-xl tracking-[0.5em] font-mono rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 focus:outline-none focus:ring-2 focus:ring-blue-600"
                   placeholder="••••"
                 />
-                <p className="mt-2 text-[11px] text-slate-400">
-                  Demo PIN: 1111 (Egasi), 2222 (Admin), 3333 (Menejer), 4444 (Kassir), 5555 (Omborchi)
-                </p>
               </div>
               {pinError && <p className="text-xs text-red-600 font-medium">{pinError}</p>}
               <button
                 type="submit"
-                className="w-full h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
+                className="w-full h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
               >
                 {t.common.confirm}
               </button>
             </form>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Change Own Password & PIN Modal */}
-      {credModalOpen && currentUser && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl">
+      <AnimatePresence>
+        {credModalOpen && currentUser && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.16 }}
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 12 }}
+              transition={{ type: 'spring', stiffness: 340, damping: 26 }}
+              className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-xl"
+            >
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-display text-base font-semibold">Parol va PIN-kodni almashtirish</h3>
               <button
@@ -730,29 +782,36 @@ export const Layout: React.FC = () => {
               {credError && <p className="text-xs text-red-600 font-medium">{credError}</p>}
               <button
                 type="submit"
-                className="w-full h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold"
+                className="w-full h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors"
               >
                 {t.common.save}
               </button>
             </form>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Toasts */}
       <div className="no-print fixed top-16 right-4 z-50 space-y-2 max-w-sm">
-        {toasts.map((toast) => (
-          <div
-            key={toast.id}
-            onClick={() => dismissToast(toast.id)}
-            className="cursor-pointer flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs font-medium shadow-lg"
-          >
-            {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
-            {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />}
-            {toast.type === 'info' && <Info className="w-4 h-4 text-blue-600 shrink-0" />}
-            <span>{toast.text}</span>
-          </div>
-        ))}
+        <AnimatePresence>
+          {toasts.map((toast) => (
+            <motion.div
+              key={toast.id}
+              initial={{ opacity: 0, x: 24, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 24, scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => dismissToast(toast.id)}
+              className="cursor-pointer flex items-center gap-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-2.5 text-xs font-medium shadow-lg"
+            >
+              {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
+              {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />}
+              {toast.type === 'info' && <Info className="w-4 h-4 text-blue-600 shrink-0" />}
+              <span>{toast.text}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
       </div>
 
       <OfflineIndicator />

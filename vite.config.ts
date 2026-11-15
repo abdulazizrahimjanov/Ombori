@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import path from 'path';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig(() => {
   return {
@@ -11,11 +11,16 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png'],
+        includeAssets: [
+          'assets/aistudio/IMG_20261007_140535_653_64e97dff.jpg',
+          'apple-touch-icon.png',
+          'pwa-192x192.png',
+          'pwa-512x512.png',
+        ],
         manifest: {
           id: '/',
           name: 'SHU BREND OMBOR — Chakana savdo va ombor',
-          short_name: 'SHU OMBOR',
+          short_name: 'SHU BREND OMBOR',
           description: "O'zbekiston do'konlari uchun kassa (POS), ombor, CRM, moliya va onlayn katalog tizimi.",
           theme_color: '#0F766E',
           background_color: '#F8FAFC',
@@ -23,6 +28,12 @@ export default defineConfig(() => {
           start_url: '/',
           scope: '/',
           icons: [
+            {
+              src: '/assets/aistudio/IMG_20261007_140535_653_64e97dff.jpg',
+              sizes: '640x640',
+              type: 'image/jpeg',
+              purpose: 'any',
+            },
             {
               src: '/pwa-192x192.png',
               sizes: '192x192',
@@ -84,7 +95,7 @@ export default defineConfig(() => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': fileURLToPath(new URL('.', import.meta.url)),
       },
     },
     server: {
@@ -93,7 +104,8 @@ export default defineConfig(() => {
       forwardConsole: false,
     },
     preview: {
-      allowedHosts: ['ombor-hvw6.onrender.com'],
+      host: '0.0.0.0',
+      allowedHosts: ['ombor-hvw6.onrender.com', '.onrender.com'],
     },
   };
 });

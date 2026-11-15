@@ -78,22 +78,19 @@ define(['./workbox-afac4cd2'], (function (workbox) { 'use strict';
    */
   workbox.precacheAndRoute([{
     "url": "pwa-maskable-512x512.png",
-    "revision": "08084494ffeb81a4c2c28241750fee9b"
+    "revision": "05f389b774aba02ee6bd034f5e242ba9"
   }, {
     "url": "pwa-512x512.png",
-    "revision": "dde50840f171c7c588df02bbff357fcc"
+    "revision": "9815b9a14dcb10aea4d49d7dd209c127"
   }, {
     "url": "pwa-192x192.png",
-    "revision": "aa0968a4659b8677ed78724a76ebfe55"
+    "revision": "ca3fcbe66f4f888bb5f5a0fef06b5a7a"
   }, {
     "url": "index.html",
-    "revision": "27d4521a695763f5e79d1c99af53bbdc"
-  }, {
-    "url": "icon.svg",
-    "revision": "62c1a31b73111cc15ad3e1e6034ec249"
+    "revision": "07b257dd9cc700a386a632d6f812f096"
   }, {
     "url": "apple-touch-icon.png",
-    "revision": "d95d873b6ce54a6070ba55ad3161f894"
+    "revision": "f57ab7b0e6d79650c34dd60d4846b4a8"
   }, {
     "url": "assets/storefront_hero_banner_1794644386966-RJf20eSM.jpg",
     "revision": null
@@ -110,38 +107,32 @@ define(['./workbox-afac4cd2'], (function (workbox) { 'use strict';
     "url": "assets/product_apparel_jacket_1794644386775-DzyP-opd.jpg",
     "revision": null
   }, {
-    "url": "assets/index-DCr5Qr9N.js",
+    "url": "assets/index-HmL7Zh66.js",
     "revision": null
   }, {
-    "url": "assets/index-Cfgjocnp.css",
+    "url": "assets/index-BZ6rsrMt.css",
     "revision": null
   }, {
-    "url": "assets/aistudio/Screenshot_20261114-165153_Chrome_58411814.jpg",
-    "revision": null
-  }, {
-    "url": "assets/aistudio/Screenshot_20261114-164451_Chrome_1c5e73cd.jpg",
-    "revision": null
-  }, {
-    "url": "assets/aistudio/Screenshot_20261114-163846_Chrome_882e93a4.jpg",
+    "url": "assets/aistudio/IMG_20261007_140535_653_64e97dff.jpg",
     "revision": null
   }, {
     "url": "apple-touch-icon.png",
-    "revision": "d95d873b6ce54a6070ba55ad3161f894"
-  }, {
-    "url": "icon.svg",
-    "revision": "62c1a31b73111cc15ad3e1e6034ec249"
+    "revision": "f57ab7b0e6d79650c34dd60d4846b4a8"
   }, {
     "url": "pwa-192x192.png",
-    "revision": "aa0968a4659b8677ed78724a76ebfe55"
+    "revision": "ca3fcbe66f4f888bb5f5a0fef06b5a7a"
   }, {
     "url": "pwa-512x512.png",
-    "revision": "dde50840f171c7c588df02bbff357fcc"
+    "revision": "9815b9a14dcb10aea4d49d7dd209c127"
   }, {
     "url": "pwa-maskable-512x512.png",
-    "revision": "08084494ffeb81a4c2c28241750fee9b"
+    "revision": "05f389b774aba02ee6bd034f5e242ba9"
+  }, {
+    "url": "assets/aistudio/IMG_20261007_140535_653_64e97dff.jpg",
+    "revision": "6090c96e00e2f24046e7f7bc42991cd7"
   }, {
     "url": "manifest.webmanifest",
-    "revision": "c0082e6a1f3a688ee81fe543f43fa695"
+    "revision": "6cf6faa0a46d8aa1909216b46daf7097"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html")));

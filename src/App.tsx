@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { HashRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { useAppStore } from './store/useAppStore';
 import { AuthScreen } from './components/AuthScreen';
 import { Layout } from './components/Layout';
 import { OnboardingWizard } from './components/OnboardingWizard';
+import { BRAND_LOGO_SRC, BRAND_NAME } from './components/BrandLogo';
 import { DashboardPage } from './pages/DashboardPage';
 import { POSPage } from './pages/POSPage';
 import { CatalogPage } from './pages/CatalogPage';
@@ -27,13 +29,24 @@ function AppRoutes() {
 
   if (!initialized) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center">
-        <div className="text-center space-y-2">
-          <img src="/icon.svg" alt="SHU BREND OMBOR" className="w-12 h-12 rounded-xl mx-auto" />
-          <div className="font-display text-sm font-semibold text-slate-600 dark:text-slate-300">
-            SHU BREND OMBOR yuklanmoqda...
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.35 }}
+          className="text-center space-y-3"
+        >
+          <motion.img
+            animate={{ scale: [1, 1.05, 1] }}
+            transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+            src={BRAND_LOGO_SRC}
+            alt={BRAND_NAME}
+            className="w-16 h-16 rounded-full object-cover bg-white ring-2 ring-slate-200 dark:ring-slate-700 shadow-md mx-auto"
+          />
+          <div className="font-display text-sm font-bold tracking-tight text-slate-700 dark:text-slate-200">
+            {BRAND_NAME} yuklanmoqda...
           </div>
-        </div>
+        </motion.div>
       </div>
     );
   }
