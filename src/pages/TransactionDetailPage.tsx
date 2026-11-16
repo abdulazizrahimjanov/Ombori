@@ -57,6 +57,10 @@ export const TransactionDetailPage: React.FC = () => {
   const processReturn = useAppStore((s) => s.processReturn);
   const upsertCustomer = useAppStore((s) => s.upsertCustomer);
   const getVariantStock = useAppStore((s) => s.getVariantStock);
+  const currentUser = useAppStore((s) => s.getCurrentUser());
+  const can = useAppStore((s) => s.can);
+  const canAccessStore = useAppStore((s) => s.canAccessStore);
+  const canSellInStore = useAppStore((s) => s.canSellInStore);
   const notify = useAppStore((s) => s.notify);
   const t = useT();
 
@@ -108,10 +112,12 @@ export const TransactionDetailPage: React.FC = () => {
 
   if (!db) return null;
 
-  if (!sale) {
+  if (!sale || !canAccessStore(sale.storeId)) {
     return (
       <div className="max-w-lg mx-auto p-6 text-center space-y-4">
-        <div className="font-display text-lg font-bold">Tranzaksiya topilmadi</div>
+        <div className="font-display text-lg font-bold">
+          {!sale ? 'Tranzaksiya topilmadi' : "Bu filial tranzaksiyasini ko'rish huquqi yo'q"}
+        </div>
         <button
           type="button"
           onClick={() => navigate('/transactions')}
@@ -178,6 +184,10 @@ export const TransactionDetailPage: React.FC = () => {
 
   const handlePayNow = async () => {
     if (sale.status !== 'deferred') return;
+    if (!canSellInStore(sale.storeId)) {
+      notify("Sizda bu filialda sotuv qilish huquqi yo'q", 'error');
+      return;
+    }
     if (!isCovered) {
       notify("To'lov summasi to'liq qoplanmagan", 'error');
       return;
@@ -203,26 +213,34 @@ export const TransactionDetailPage: React.FC = () => {
       }
     }
 
-    const updatedSale = await payDeferredTransaction(sale.id, {
-      payments: activePaymentList,
-      cashGiven: cashTarget > 0 ? effectiveCashGiven : undefined,
-      changeAmount: cashTarget > 0 ? changeAmount : undefined,
-      customerId: effectiveCustomerId || undefined,
-    });
+    try {
+      const updatedSale = await payDeferredTransaction(sale.id, {
+        payments: activePaymentList,
+        cashGiven: cashTarget > 0 ? effectiveCashGiven : undefined,
+        changeAmount: cashTarget > 0 ? changeAmount : undefined,
+        customerId: effectiveCustomerId || undefined,
+      });
 
-    const qrUrl = await generateSaleQr(updatedSale, db.settings.showReceiptQr);
-    setPaidSuccessSale({ sale: updatedSale, qrUrl });
-    notify(`Tranzaksiya ${updatedSale.receiptNumber} to'landi`, 'success');
+      const qrUrl = await generateSaleQr(updatedSale, db.settings.showReceiptQr);
+      setPaidSuccessSale({ sale: updatedSale, qrUrl });
+      notify(`Tranzaksiya ${updatedSale.receiptNumber} to'landi`, 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "To'lovda xatolik yuz berdi", 'error');
+    }
   };
 
   const handlePrint = async (targetSale: Sale) => {
-    await printSaleReceipt({
-      sale: targetSale,
-      settings: db.settings,
-      store: db.stores.find((st) => st.id === targetSale.storeId),
-      language,
-      methodLabels: t.pos.methods as Record<string, string>,
-    });
+    try {
+      await printSaleReceipt({
+        sale: targetSale,
+        settings: db.settings,
+        store: db.stores.find((st) => st.id === targetSale.storeId),
+        language,
+        methodLabels: t.pos.methods as Record<string, string>,
+      });
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Chop etishda xatolik', 'error');
+    }
   };
 
   const handleShare = async (targetSale: Sale) => {
@@ -266,25 +284,29 @@ export const TransactionDetailPage: React.FC = () => {
       return;
     }
     const nowIso = new Date().toISOString();
-    const created = await upsertCustomer({
-      id: uid('cust'),
-      name: newCustName.trim(),
-      phone: cleanPhone,
-      tags: [],
-      segment: 'new',
-      totalSpent: 0,
-      ordersCount: 0,
-      debtBalance: 0,
-      storeId: sale.storeId,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      createdBy: 'usr-cashier',
-    });
-    setOverrideCustomerId(created.id);
-    setNewCustomerModalOpen(false);
-    setNewCustName('');
-    setNewCustPhone('+99890');
-    notify(`Mijoz "${created.name}" qo'shildi va tanlandi`, 'success');
+    try {
+      const created = await upsertCustomer({
+        id: uid('cust'),
+        name: newCustName.trim(),
+        phone: cleanPhone,
+        tags: [],
+        segment: 'new',
+        totalSpent: 0,
+        ordersCount: 0,
+        debtBalance: 0,
+        storeId: sale.storeId,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        createdBy: currentUser?.id ?? 'usr-owner',
+      });
+      setOverrideCustomerId(created.id);
+      setNewCustomerModalOpen(false);
+      setNewCustName('');
+      setNewCustPhone('+99890');
+      notify(`Mijoz "${created.name}" qo'shildi va tanlandi`, 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Mijoz qo'shib bo'lmadi", 'error');
+    }
   };
 
   return (
@@ -421,11 +443,13 @@ export const TransactionDetailPage: React.FC = () => {
                     className="h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-medium max-w-[230px]"
                   >
                     <option value="">{t.pos.walkIn}</option>
-                    {db.customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.phone})
-                      </option>
-                    ))}
+                    {db.customers
+                      .filter((c) => !c.storeId || c.storeId === 'all' || c.storeId === sale.storeId)
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.phone})
+                        </option>
+                      ))}
                   </select>
                   <button
                     type="button"
@@ -564,11 +588,13 @@ export const TransactionDetailPage: React.FC = () => {
                     className="w-full h-10 px-3 rounded-xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-slate-900 text-xs font-semibold"
                   >
                     <option value="">— Mijozni tanlang —</option>
-                    {db.customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.phone})
-                      </option>
-                    ))}
+                    {db.customers
+                      .filter((c) => !c.storeId || c.storeId === 'all' || c.storeId === sale.storeId)
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} ({c.phone})
+                        </option>
+                      ))}
                   </select>
                 </div>
               )}
@@ -624,7 +650,7 @@ export const TransactionDetailPage: React.FC = () => {
                 <span>{t.pos.remaining}:</span>
                 <span className="font-mono tabular-nums">
                   {isCovered
-                    ? `0 UZS (To'liq qoplandi)`
+                    ? `0 so'm (To'liq qoplandi)`
                     : formatUzsSpaced(remainingToPay)}
                 </span>
               </div>
@@ -756,9 +782,13 @@ export const TransactionDetailPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={async () => {
-                    await deleteDeferredTransaction(sale.id);
-                    notify("Kechiktirilgan tranzaksiya o'chirildi", 'info');
-                    navigate('/transactions');
+                    try {
+                      await deleteDeferredTransaction(sale.id);
+                      notify("Kechiktirilgan tranzaksiya o'chirildi", 'info');
+                      navigate('/transactions');
+                    } catch (err) {
+                      notify(err instanceof Error ? err.message : "O'chirishda xatolik", 'error');
+                    }
                   }}
                   className="h-12 rounded-2xl border border-red-200 dark:border-red-900/60 text-red-600 text-xs font-bold inline-flex items-center justify-center gap-1.5"
                 >
@@ -795,7 +825,7 @@ export const TransactionDetailPage: React.FC = () => {
                   </button>
                 </div>
 
-                {(sale.status === 'completed' || sale.status === 'partial_return') && (
+                {(sale.status === 'completed' || sale.status === 'partial_return') && can('process_returns') && (
                   <div className="grid grid-cols-2 gap-2.5">
                     <button
                       type="button"
@@ -973,21 +1003,32 @@ export const TransactionDetailPage: React.FC = () => {
                 const itemsToReturn = Object.entries(returnQtys)
                   .filter(([, q]) => q > 0)
                   .map(([saleItemId, qty]) => ({ saleItemId, qty }));
-                if (itemsToReturn.length === 0) return;
-                await processReturn({
-                  saleId: sale.id,
-                  items: itemsToReturn,
-                  refundMethod: returnMethod,
-                  reason: returnReason,
-                  isExchange: returnModalMode === 'exchange',
-                });
-                const mode = returnModalMode;
-                setReturnModalMode(null);
-                if (mode === 'exchange') {
-                  notify("Qaytarish omborga qayd etildi — yangi tovarni Savatchadan tanlang", 'success');
-                  navigate('/pos');
-                } else {
-                  notify("Qaytarish rasmiylashtirildi", 'success');
+                if (itemsToReturn.length === 0) {
+                  notify('Qaytariladigan mahsulot miqdorini kiriting', 'error');
+                  return;
+                }
+                if (!returnReason.trim()) {
+                  notify('Qaytarish sababini kiriting', 'error');
+                  return;
+                }
+                try {
+                  await processReturn({
+                    saleId: sale.id,
+                    items: itemsToReturn,
+                    refundMethod: returnMethod,
+                    reason: returnReason.trim(),
+                    isExchange: returnModalMode === 'exchange',
+                  });
+                  const mode = returnModalMode;
+                  setReturnModalMode(null);
+                  if (mode === 'exchange') {
+                    notify("Qaytarish omborga qayd etildi — yangi tovarni Savatchadan tanlang", 'success');
+                    navigate('/pos');
+                  } else {
+                    notify("Qaytarish rasmiylashtirildi", 'success');
+                  }
+                } catch (err) {
+                  notify(err instanceof Error ? err.message : 'Qaytarishda xatolik yuz berdi', 'error');
                 }
               }}
               className="w-full h-11 rounded-xl bg-red-600 text-white text-xs font-bold"

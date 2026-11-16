@@ -48,6 +48,7 @@ function getDayHeading(dayKey: string, todayLabel: string, yesterdayLabel: strin
 export const TransactionsPage: React.FC = () => {
   const db = useAppStore((s) => s.db);
   const activeStoreId = useAppStore((s) => s.activeStoreId);
+  const canAccessStore = useAppStore((s) => s.canAccessStore);
   const t = useT();
   const navigate = useNavigate();
 
@@ -89,6 +90,7 @@ export const TransactionsPage: React.FC = () => {
     return [...db.sales]
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .filter((s) => {
+        if (!canAccessStore(s.storeId)) return false;
         if (effectiveStore !== 'all' && s.storeId !== effectiveStore) return false;
         if (statusFilter !== 'all' && s.status !== statusFilter) return false;
         if (methodFilter !== 'all' && !s.payments.some((p) => p.method === methodFilter)) {
@@ -113,6 +115,7 @@ export const TransactionsPage: React.FC = () => {
   }, [
     db,
     activeStoreId,
+    canAccessStore,
     storeFilter,
     statusFilter,
     methodFilter,
@@ -196,6 +199,7 @@ export const TransactionsPage: React.FC = () => {
     return `← ${fmt(dateTo)}`;
   })();
 
+  const allowedStores = db.stores.filter((st) => canAccessStore(st.id));
   const sellers = db.users.filter((u) => u.isActive);
 
   return (
@@ -401,7 +405,7 @@ export const TransactionsPage: React.FC = () => {
                   className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950"
                 >
                   <option value="global">{t.common.allStores}</option>
-                  {db.stores.map((s) => (
+                  {allowedStores.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.name}
                     </option>

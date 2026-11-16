@@ -9,7 +9,9 @@ const LS_FALLBACK_KEY = 'shu_brend_ombor_snapshot_v1';
 
 export interface IRepository {
   load(): Promise<DatabaseSnapshot>;
+  loadCached(): Promise<DatabaseSnapshot | null>;
   save(snapshot: DatabaseSnapshot): Promise<void>;
+  clearCache(): Promise<void>;
   resetToDemo(): Promise<DatabaseSnapshot>;
   exportJson(snapshot: DatabaseSnapshot): string;
   importJson(rawJson: string): Promise<DatabaseSnapshot>;
@@ -35,7 +37,7 @@ function openIndexedDb(): Promise<IDBDatabase | null> {
 }
 
 export class LocalIndexedDBRepository implements IRepository {
-  async load(): Promise<DatabaseSnapshot> {
+  async loadCached(): Promise<DatabaseSnapshot | null> {
     const db = await openIndexedDb();
     if (db) {
       try {
@@ -46,11 +48,11 @@ export class LocalIndexedDBRepository implements IRepository {
           getReq.onsuccess = () => resolve(getReq.result as DatabaseSnapshot | undefined);
           getReq.onerror = () => resolve(undefined);
         });
-        if (data && Array.isArray(data.products) && data.products.length > 0) {
+        if (data && Array.isArray(data.stores)) {
           return data;
         }
       } catch {
-        // fall through to localStorage
+        // fall through
       }
     }
 
@@ -58,14 +60,21 @@ export class LocalIndexedDBRepository implements IRepository {
       const raw = localStorage.getItem(LS_FALLBACK_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as DatabaseSnapshot;
-        if (parsed && Array.isArray(parsed.products) && parsed.products.length > 0) {
+        if (parsed && Array.isArray(parsed.stores)) {
           return parsed;
         }
       }
     } catch {
-      // ignore corrupted localStorage
+      // ignore corrupted storage
     }
+    return null;
+  }
 
+  async load(): Promise<DatabaseSnapshot> {
+    const cached = await this.loadCached();
+    if (cached && Array.isArray(cached.products)) {
+      return cached;
+    }
     const seeded = createSeedDatabase();
     await this.save(seeded);
     return seeded;
@@ -94,6 +103,27 @@ export class LocalIndexedDBRepository implements IRepository {
     }
   }
 
+  async clearCache(): Promise<void> {
+    try {
+      localStorage.removeItem(LS_FALLBACK_KEY);
+    } catch {
+      // ignore
+    }
+    const db = await openIndexedDb();
+    if (db) {
+      await new Promise<void>((resolve) => {
+        try {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          tx.objectStore(STORE_NAME).delete(SNAPSHOT_KEY);
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+        } catch {
+          resolve();
+        }
+      });
+    }
+  }
+
   async resetToDemo(): Promise<DatabaseSnapshot> {
     const fresh = createSeedDatabase();
     await this.save(fresh);
@@ -107,7 +137,7 @@ export class LocalIndexedDBRepository implements IRepository {
   async importJson(rawJson: string): Promise<DatabaseSnapshot> {
     const parsed = JSON.parse(rawJson) as DatabaseSnapshot;
     if (!parsed || !Array.isArray(parsed.stores) || !Array.isArray(parsed.products)) {
-      throw new Error('Invalid backup structure');
+      throw new Error("Zaxira fayli tuzilmasi noto'g'ri");
     }
     await this.save(parsed);
     return parsed;

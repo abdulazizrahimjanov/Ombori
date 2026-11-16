@@ -30,7 +30,9 @@ export const OnboardingWizard: React.FC<{ onGoToPos: () => void }> = ({ onGoToPo
   const [cashierPhone, setCashierPhone] = useState('+998907778899');
   const [cashierPin, setCashierPin] = useState('7777');
 
+  const currentUser = useAppStore((s) => s.getCurrentUser());
   if (!showOnboarding || !db) return null;
+  const actorId = currentUser?.id ?? 'usr-owner';
 
   const handleSaveStore = async () => {
     if (!storeName.trim()) return;
@@ -45,7 +47,7 @@ export const OnboardingWizard: React.FC<{ onGoToPos: () => void }> = ({ onGoToPo
       storeId: sId,
       createdAt: nowIso,
       updatedAt: nowIso,
-      createdBy: 'usr-owner',
+      createdBy: actorId,
     });
     await upsertStore({
       id: sId,
@@ -57,7 +59,7 @@ export const OnboardingWizard: React.FC<{ onGoToPos: () => void }> = ({ onGoToPo
       storeId: sId,
       createdAt: nowIso,
       updatedAt: nowIso,
-      createdBy: 'usr-owner',
+      createdBy: actorId,
     });
     notify("Do'kon yaratildi", 'success');
     setStep(2);
@@ -68,8 +70,8 @@ export const OnboardingWizard: React.FC<{ onGoToPos: () => void }> = ({ onGoToPo
     const nowIso = new Date().toISOString();
     const pId = uid('prod');
     const vId = uid('var');
-    const storeId = db.stores[0]?.id ?? 'store-chilonzor';
-    const whId = db.stores[0]?.defaultWarehouseId ?? 'wh-chilonzor';
+    const storeId = db.stores[0]?.id ?? 'store-toraqorgon';
+    const whId = db.stores[0]?.defaultWarehouseId ?? db.warehouses[0]?.id ?? 'wh-toraqorgon';
     await upsertProduct({
       id: pId,
       name: prodName,
@@ -92,15 +94,15 @@ export const OnboardingWizard: React.FC<{ onGoToPos: () => void }> = ({ onGoToPo
           storeId,
           createdAt: nowIso,
           updatedAt: nowIso,
-          createdBy: 'usr-owner',
+          createdBy: actorId,
         },
       ],
       storeId,
       createdAt: nowIso,
       updatedAt: nowIso,
-      createdBy: 'usr-owner',
+      createdBy: actorId,
     });
-    await quickAddStock(pId, vId, whId, prodQty, 'Usta orqali boshlang\'ich qoldiq');
+    await quickAddStock(pId, vId, whId, prodQty, "Usta orqali boshlang'ich qoldiq");
     notify("Mahsulot qo'shildi", 'success');
     setStep(3);
   };
@@ -108,6 +110,7 @@ export const OnboardingWizard: React.FC<{ onGoToPos: () => void }> = ({ onGoToPo
   const handleSaveCashier = async () => {
     if (!cashierName.trim()) return;
     const nowIso = new Date().toISOString();
+    const targetStoreId = db.stores[0]?.id ?? 'store-toraqorgon';
     await upsertEmployee(
       {
         id: uid('emp'),
@@ -115,14 +118,18 @@ export const OnboardingWizard: React.FC<{ onGoToPos: () => void }> = ({ onGoToPo
         name: cashierName,
         phone: cashierPhone,
         roleId: 'cashier',
+        position: 'Kassir',
+        primaryStoreId: targetStoreId,
+        assignedStoreIds: [targetStoreId],
+        sellStoreIds: [targetStoreId],
         baseSalary: 3500000,
         commissionPercent: 1.5,
         schedule: '2/2 smena',
         hiredAt: nowIso,
-        storeId: db.stores[0]?.id ?? 'store-chilonzor',
+        storeId: targetStoreId,
         createdAt: nowIso,
         updatedAt: nowIso,
-        createdBy: 'usr-owner',
+        createdBy: actorId,
       },
       { pin: cashierPin, password: '123456' }
     );

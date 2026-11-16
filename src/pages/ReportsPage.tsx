@@ -3,17 +3,41 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 import { Download, Printer } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { formatDateTime, formatMoney, useT } from '../i18n';
-import { exportToExcel } from '../utils/export';
+import { AuditLog } from '../types/models';
+import { exportToExcel, exportToPdf } from '../utils/export';
 import { printHtmlDocument } from '../utils/print';
 
 type ReportTab = 'sales' | 'abc' | 'valuation' | 'returnsDiscounts' | 'audit';
 
+const AUDIT_ACTION_UZ: Record<AuditLog['action'], string> = {
+  product_create: "Tovar qo'shish",
+  product_edit: 'Tovar tahrirlash',
+  product_delete: "Tovar o'chirish",
+  price_change: "Narx o'zgartirish",
+  purchase_receipt: 'Kirim hujjati',
+  sale_create: 'Sotuv',
+  sale_return: 'Qaytarish',
+  big_discount: 'Katta chegirma',
+  stock_writeoff: 'Hisobdan chiqarish',
+  stocktake_apply: 'Inventarizatsiya',
+  transfer_create: "Ko'chirish yuborish",
+  transfer_receive: "Ko'chirish qabul qilish",
+  transfer_reject: "Ko'chirish rad etildi",
+  expense_create: 'Xarajat',
+  shift_close: 'Smena yopish',
+  settings_change: "Sozlamalar o'zgarishi",
+  debt_repay: "Qarz to'lovi",
+  employee_change: "Xodim o'zgarishi",
+  entity_restore: 'Tiklash',
+  backup_restore: 'Zaxiradan tiklash',
+};
+
 export const ReportsPage: React.FC = () => {
   const db = useAppStore((s) => s.db);
   const can = useAppStore((s) => s.can);
+  const canAccessStore = useAppStore((s) => s.canAccessStore);
   const activeStoreId = useAppStore((s) => s.activeStoreId);
   const language = useAppStore((s) => s.language);
-  const getVariantStock = useAppStore((s) => s.getVariantStock);
   const t = useT();
 
   const [tab, setTab] = useState<ReportTab>('sales');
@@ -32,11 +56,12 @@ export const ReportsPage: React.FC = () => {
     const toMs = new Date(dateTo + 'T23:59:59').getTime();
     return db.sales.filter((s) => {
       if (s.status === 'deferred') return false;
+      if (!canAccessStore(s.storeId)) return false;
       if (activeStoreId !== 'all' && s.storeId !== activeStoreId) return false;
       const tMs = new Date(s.createdAt).getTime();
       return tMs >= fromMs && tMs <= toMs;
     });
-  }, [db, dateFrom, dateTo, activeStoreId]);
+  }, [db, dateFrom, dateTo, activeStoreId, canAccessStore]);
 
   const paymentSummary = useMemo(() => {
     const map = new Map<string, number>();
@@ -76,23 +101,58 @@ export const ReportsPage: React.FC = () => {
 
   const valuationRows = useMemo(() => {
     if (!db) return [];
-    return db.products.map((p) => {
-      let qty = 0;
-      let costVal = 0;
-      let retailVal = 0;
-      p.variants.forEach((v) => {
-        const q = getVariantStock(v.id);
-        qty += q;
-        costVal += q * v.purchasePrice;
-        retailVal += q * v.retailPrice;
+    const scopedWhSet = new Set(
+      db.warehouses
+        .filter((w) => canAccessStore(w.storeId) && (activeStoreId === 'all' || w.storeId === activeStoreId))
+        .map((w) => w.id)
+    );
+    return db.products
+      .filter((p) => !p.storeId || p.storeId === 'all' || activeStoreId === 'all' || p.storeId === activeStoreId)
+      .map((p) => {
+        let qty = 0;
+        let costVal = 0;
+        let retailVal = 0;
+        p.variants.forEach((v) => {
+          const q = db.stockItems
+            .filter((st) => st.variantId === v.id && scopedWhSet.has(st.warehouseId))
+            .reduce((sum, st) => sum + st.qty, 0);
+          qty += q;
+          costVal += q * v.purchasePrice;
+          retailVal += q * v.retailPrice;
+        });
+        const soldQty = filteredSales
+          .flatMap((s) => s.items)
+          .filter((it) => it.productId === p.id)
+          .reduce((s, it) => s + it.qty, 0);
+        return { id: p.id, name: p.name, qty, costVal, retailVal, margin: retailVal - costVal, soldQty };
       });
-      const soldQty = filteredSales
-        .flatMap((s) => s.items)
-        .filter((it) => it.productId === p.id)
-        .reduce((s, it) => s + it.qty, 0);
-      return { id: p.id, name: p.name, qty, costVal, retailVal, margin: retailVal - costVal, soldQty };
+  }, [db, filteredSales, activeStoreId, canAccessStore]);
+
+  const scopedReturns = useMemo(() => {
+    if (!db) return [];
+    const fromMs = new Date(dateFrom).getTime();
+    const toMs = new Date(dateTo + 'T23:59:59').getTime();
+    return db.returns.filter((r) => {
+      if (!canAccessStore(r.storeId)) return false;
+      if (activeStoreId !== 'all' && r.storeId !== activeStoreId) return false;
+      const tMs = new Date(r.createdAt).getTime();
+      return tMs >= fromMs && tMs <= toMs;
     });
-  }, [db, getVariantStock, filteredSales]);
+  }, [db, dateFrom, dateTo, activeStoreId, canAccessStore]);
+
+  const scopedAuditLogs = useMemo(() => {
+    if (!db) return [];
+    const fromMs = new Date(dateFrom).getTime();
+    const toMs = new Date(dateTo + 'T23:59:59').getTime();
+    return db.auditLogs.filter((a) => {
+      if (a.storeId && a.storeId !== 'all') {
+        if (!canAccessStore(a.storeId)) return false;
+        if (activeStoreId !== 'all' && a.storeId !== activeStoreId) return false;
+      }
+      const tMs = new Date(a.createdAt).getTime();
+      return tMs >= fromMs && tMs <= toMs;
+    });
+  }, [db, dateFrom, dateTo, activeStoreId, canAccessStore]);
 
   if (!db) return null;
 
@@ -143,14 +203,116 @@ export const ReportsPage: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              if (tab === 'abc') exportToExcel(abcRows, 'abc-tahlil');
-              else if (tab === 'valuation') exportToExcel(valuationRows, 'ombor-qiymati');
-              else exportToExcel(filteredSales.map((s) => ({ Chek: s.receiptNumber, Sana: s.createdAt, Kassir: s.cashierName, Summa: s.totalAmount })), 'savdo-hisoboti');
+              if (tab === 'abc') {
+                exportToExcel(
+                  abcRows.map((r) => ({
+                    Mahsulot: r.name,
+                    SotilganSoni: r.qty,
+                    Tushum: r.revenue,
+                    ...(canViewProfit ? { Foyda: r.profit } : {}),
+                    UlushFoiz: `${r.sharePct}%`,
+                    ABC: r.abc,
+                  })),
+                  'abc-tahlil'
+                );
+              } else if (tab === 'valuation') {
+                exportToExcel(
+                  valuationRows.map((r) => ({
+                    Mahsulot: r.name,
+                    Qoldiq: r.qty,
+                    DavrSotuv: r.soldQty,
+                    ...(canViewProfit ? { TannarxQiymat: r.costVal } : {}),
+                    SotuvQiymat: r.retailVal,
+                  })),
+                  'ombor-qiymati'
+                );
+              } else if (tab === 'audit') {
+                exportToExcel(
+                  scopedAuditLogs.map((a) => ({
+                    Vaqt: formatDateTime(a.createdAt, language),
+                    Foydalanuvchi: a.userName,
+                    Amal: AUDIT_ACTION_UZ[a.action] || a.action,
+                    Tafsilot: a.summary,
+                  })),
+                  'audit-jurnali'
+                );
+              } else {
+                exportToExcel(
+                  filteredSales.map((s) => ({
+                    Chek: s.receiptNumber,
+                    Sana: formatDateTime(s.createdAt, language),
+                    Kassir: s.cashierName,
+                    Summa: s.totalAmount,
+                  })),
+                  'savdo-hisoboti'
+                );
+              }
             }}
             className="h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium inline-flex items-center gap-1"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Excel</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (tab === 'abc') {
+                exportToPdf(
+                  `ABC tahlil (${dateFrom} - ${dateTo})`,
+                  ['Mahsulot', 'Soni', 'Tushum', ...(canViewProfit ? ['Foyda'] : []), 'Ulush', 'ABC'],
+                  abcRows.map((r) => [
+                    r.name,
+                    r.qty,
+                    formatMoney(r.revenue, { lang: language }),
+                    ...(canViewProfit ? [formatMoney(r.profit, { lang: language })] : []),
+                    `${r.sharePct}%`,
+                    r.abc,
+                  ]),
+                  'abc-tahlil'
+                );
+              } else if (tab === 'valuation') {
+                exportToPdf(
+                  'Ombor qiymati hisoboti',
+                  ['Mahsulot', 'Qoldiq', 'Sotuv', ...(canViewProfit ? ['Tannarx'] : []), 'Sotuv qiymat'],
+                  valuationRows.map((r) => [
+                    r.name,
+                    r.qty,
+                    r.soldQty,
+                    ...(canViewProfit ? [formatMoney(r.costVal, { lang: language })] : []),
+                    formatMoney(r.retailVal, { lang: language }),
+                  ]),
+                  'ombor-qiymati'
+                );
+              } else if (tab === 'audit') {
+                exportToPdf(
+                  `Audit jurnali (${dateFrom} - ${dateTo})`,
+                  ['Vaqt', 'Foydalanuvchi', 'Amal', 'Tafsilot'],
+                  scopedAuditLogs.map((a) => [
+                    formatDateTime(a.createdAt, language),
+                    a.userName,
+                    AUDIT_ACTION_UZ[a.action] || a.action,
+                    a.summary,
+                  ]),
+                  'audit-jurnali'
+                );
+              } else {
+                exportToPdf(
+                  `Savdo hisoboti (${dateFrom} - ${dateTo})`,
+                  ['Chek', 'Kassir', 'Sana', 'Summa'],
+                  filteredSales.map((s) => [
+                    s.receiptNumber,
+                    s.cashierName,
+                    formatDateTime(s.createdAt, language),
+                    formatMoney(s.totalAmount, { lang: language }),
+                  ]),
+                  'savdo-hisoboti'
+                );
+              }
+            }}
+            className="h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium inline-flex items-center gap-1"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>PDF</span>
           </button>
           <button
             type="button"
@@ -299,11 +461,11 @@ export const ReportsPage: React.FC = () => {
       {tab === 'returnsDiscounts' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-2">
-            <h3 className="font-display text-sm font-bold">Qaytarishlar ({db.returns.length})</h3>
-            {db.returns.length === 0 ? (
+            <h3 className="font-display text-sm font-bold">Qaytarishlar ({scopedReturns.length})</h3>
+            {scopedReturns.length === 0 ? (
               <p className="text-xs text-slate-400 py-6 text-center">Qaytarishlar mavjud emas</p>
             ) : (
-              db.returns.map((r) => (
+              scopedReturns.map((r) => (
                 <div key={r.id} className="py-2 border-b border-slate-100 dark:border-slate-800 flex justify-between text-xs">
                   <div>
                     <div className="font-mono font-bold">{r.number} ({r.receiptNumber})</div>
@@ -349,14 +511,24 @@ export const ReportsPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {db.auditLogs.map((a) => (
-                <tr key={a.id}>
-                  <td className="py-2 px-3 font-mono text-slate-500 whitespace-nowrap">{formatDateTime(a.createdAt, language)}</td>
-                  <td className="py-2 px-3 font-semibold">{a.userName}</td>
-                  <td className="py-2 px-3 font-mono uppercase">{a.action}</td>
-                  <td className="py-2 px-3">{a.summary}</td>
+              {scopedAuditLogs.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="py-8 text-center text-slate-400">
+                    Tanlangan davrda yozuvlar topilmadi
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                scopedAuditLogs.map((a) => (
+                  <tr key={a.id}>
+                    <td className="py-2 px-3 font-mono text-slate-500 whitespace-nowrap">{formatDateTime(a.createdAt, language)}</td>
+                    <td className="py-2 px-3 font-semibold">{a.userName}</td>
+                    <td className="py-2 px-3 font-semibold text-slate-700 dark:text-slate-200">
+                      {AUDIT_ACTION_UZ[a.action] || a.action}
+                    </td>
+                    <td className="py-2 px-3">{a.summary}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

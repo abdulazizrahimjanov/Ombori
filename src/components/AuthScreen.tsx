@@ -18,13 +18,21 @@ export const AuthScreen: React.FC<{ onOpenCatalog?: () => void }> = ({ onOpenCat
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const ok = loginWithPhone(phone, password);
-    if (!ok) {
+    setLoading(true);
+    try {
+      const res = await loginWithPhone(phone, password);
+      if (!res.ok) {
+        setError(res.error || t.auth.invalidCredentials);
+      }
+    } catch {
       setError(t.auth.invalidCredentials);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -138,12 +146,12 @@ export const AuthScreen: React.FC<{ onOpenCatalog?: () => void }> = ({ onOpenCat
               <div className="relative">
                 <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
-                  type="tel"
+                  type="text"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-teal-600 focus:bg-white dark:focus:bg-slate-900 transition-all"
-                  placeholder="+998 88 926 04 04"
-                  autoComplete="tel"
+                  placeholder="+998889260404 yoki login"
+                  autoComplete="username"
                   required
                 />
               </div>
@@ -192,9 +200,10 @@ export const AuthScreen: React.FC<{ onOpenCatalog?: () => void }> = ({ onOpenCat
               whileHover={{ y: -1 }}
               whileTap={{ scale: 0.98 }}
               type="submit"
-              className="w-full h-11 rounded-xl bg-gradient-to-r from-teal-700 to-teal-600 hover:from-teal-800 hover:to-teal-700 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-md shadow-teal-700/20 transition-all cursor-pointer"
+              disabled={loading}
+              className="w-full h-11 rounded-xl bg-gradient-to-r from-teal-700 to-teal-600 hover:from-teal-800 hover:to-teal-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-md shadow-teal-700/20 transition-all cursor-pointer"
             >
-              <span>{t.auth.signIn}</span>
+              <span>{loading ? t.common.loading : t.auth.signIn}</span>
               <ArrowRight className="w-4 h-4" />
             </motion.button>
           </form>

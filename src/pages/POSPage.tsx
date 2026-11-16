@@ -265,13 +265,17 @@ export const POSPage: React.FC = () => {
   const processReturn = useAppStore((s) => s.processReturn);
   const upsertCustomer = useAppStore((s) => s.upsertCustomer);
   const verifyManagerPin = useAppStore((s) => s.verifyManagerPin);
+  const currentUser = useAppStore((s) => s.getCurrentUser());
+  const canSellInStore = useAppStore((s) => s.canSellInStore);
   const notify = useAppStore((s) => s.notify);
   const t = useT();
   const navigate = useNavigate();
 
   const currentStoreId =
-    activeStoreId !== 'all' ? activeStoreId : db?.stores[0]?.id ?? 'store-chilonzor';
+    activeStoreId !== 'all' ? activeStoreId : db?.stores[0]?.id ?? 'store-toraqorgon';
   const currentWarehouseId = getWarehouseForStore(currentStoreId);
+  const canSellHere = canSellInStore(currentStoreId);
+  const actorId = currentUser?.id ?? 'usr-owner';
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [rawSearch, setRawSearch] = useState('');
@@ -406,29 +410,33 @@ export const POSPage: React.FC = () => {
   const searchResults = useMemo(() => {
     if (!db || !search) return [];
     const list: { product: Product; variant: Product['variants'][0]; stock: number }[] = [];
-    db.products.forEach((p) => {
-      p.variants.forEach((v) => {
-        const match =
-          p.name.toLowerCase().includes(search) ||
-          v.sku.toLowerCase().includes(search) ||
-          v.barcodes.some((b) => b.toLowerCase().includes(search)) ||
-          (v.color?.toLowerCase().includes(search) ?? false) ||
-          (v.size?.toLowerCase().includes(search) ?? false);
-        if (match) {
-          list.push({ product: p, variant: v, stock: getVariantStock(v.id, currentWarehouseId) });
-        }
+    db.products
+      .filter((p) => p.storeId === currentStoreId || p.storeId === 'all')
+      .forEach((p) => {
+        p.variants.forEach((v) => {
+          const match =
+            p.name.toLowerCase().includes(search) ||
+            v.sku.toLowerCase().includes(search) ||
+            v.barcodes.some((b) => b.toLowerCase().includes(search)) ||
+            (v.color?.toLowerCase().includes(search) ?? false) ||
+            (v.size?.toLowerCase().includes(search) ?? false);
+          if (match) {
+            list.push({ product: p, variant: v, stock: getVariantStock(v.id, currentWarehouseId) });
+          }
+        });
       });
-    });
     return list.slice(0, 30);
-  }, [db, search, currentWarehouseId, getVariantStock]);
+  }, [db, search, currentStoreId, currentWarehouseId, getVariantStock]);
 
   if (!db) return null;
 
   const activeShift =
     db.cashShifts.find((s) => s.status === 'open' && s.storeId === currentStoreId) ??
-    db.cashShifts.find((s) => s.status === 'open');
+    db.cashShifts.find((s) => s.status === 'open' && (!currentStoreId || s.storeId === currentStoreId));
 
-  const deferredSales = db.sales.filter((s) => s.status === 'deferred');
+  const deferredSales = db.sales.filter(
+    (s) => s.status === 'deferred' && s.storeId === currentStoreId
+  );
 
   const selectedCustomer = db.customers.find((c) => c.id === cartCustomerId);
   const selectedLoyalty = selectedCustomer
@@ -505,7 +513,7 @@ export const POSPage: React.FC = () => {
   const handleBarcodeScanned = (code: string) => {
     const clean = code.trim();
     if (!clean) return;
-    for (const p of db.products) {
+    for (const p of db.products.filter((pr) => pr.storeId === currentStoreId || pr.storeId === 'all')) {
       for (const v of p.variants) {
         if (v.barcodes.includes(clean) || v.sku.toLowerCase() === clean.toLowerCase()) {
           addVariantToCart(p, v);
@@ -548,19 +556,23 @@ export const POSPage: React.FC = () => {
           storeId: currentStoreId,
           createdAt: nowIso,
           updatedAt: nowIso,
-          createdBy: 'usr-cashier',
+          createdBy: actorId,
         },
       ],
       storeId: currentStoreId,
       createdAt: nowIso,
       updatedAt: nowIso,
-      createdBy: 'usr-cashier',
+      createdBy: actorId,
     };
-    await upsertProduct(product);
-    await quickAddStock(pId, vId, currentWarehouseId, Math.max(1, quickProdQty), 'Savatcha tezkor yaratish');
-    addVariantToCart(product, product.variants[0]);
-    setQuickCreateBarcode(null);
-    setRawSearch('');
+    try {
+      await upsertProduct(product);
+      await quickAddStock(pId, vId, currentWarehouseId, Math.max(1, quickProdQty), 'Savatcha tezkor yaratish');
+      addVariantToCart(product, product.variants[0]);
+      setQuickCreateBarcode(null);
+      setRawSearch('');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Xatolik yuz berdi', 'error');
+    }
   };
 
   const updateItemQty = (itemId: string, nextQty: number) => {
@@ -608,25 +620,34 @@ export const POSPage: React.FC = () => {
 
   const handleProceedToPayment = async () => {
     if (cartItems.length === 0) return;
+    if (!canSellHere) {
+      notify("Sizda bu filialda sotuv qilish huquqi yo'q", 'error');
+      return;
+    }
     if (hasOverStockError) {
       notify("Ba'zi tovarlar qoldig'i omborda yetarli emas", 'error');
       return;
     }
-    const tx = await createDeferredTransaction({
-      storeId: currentStoreId,
-      warehouseId: currentWarehouseId,
-      items: cartItems,
-      customerId: cartCustomerId || undefined,
-      checkDiscountAmount: totalCheckDiscount,
-      checkDiscountPercent: cartDiscountPercent,
-      loyaltyPointsSpent: effectiveLoyaltySpent,
-      promoCode: cartPromoCode || undefined,
-    });
-    clearCart();
-    navigate(`/transactions/${tx.id}?tab=payment`);
+    try {
+      const tx = await createDeferredTransaction({
+        storeId: currentStoreId,
+        warehouseId: currentWarehouseId,
+        items: cartItems,
+        customerId: cartCustomerId || undefined,
+        checkDiscountAmount: totalCheckDiscount,
+        checkDiscountPercent: cartDiscountPercent,
+        loyaltyPointsSpent: effectiveLoyaltySpent,
+        promoCode: cartPromoCode || undefined,
+      });
+      clearCart();
+      navigate(`/transactions/${tx.id}?tab=payment`);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Sotuvni yaratib bo'lmadi", 'error');
+    }
   };
 
   const filteredCustomers = db.customers.filter((c) => {
+    if (c.storeId && c.storeId !== 'all' && c.storeId !== currentStoreId) return false;
     if (!customerSearch.trim()) return true;
     const q = customerSearch.trim().toLowerCase();
     return c.name.toLowerCase().includes(q) || c.phone.includes(q);
@@ -634,34 +655,58 @@ export const POSPage: React.FC = () => {
 
   return (
     <div className="max-w-3xl mx-auto pb-36 lg:pb-24 space-y-3">
-      {/* Search Field: "Artikul, shtrix-kod, ism" */}
-      <div className="relative">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-        <input
-          ref={searchInputRef}
-          value={rawSearch}
-          onChange={(e) => setRawSearch(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && rawSearch.trim()) {
-              e.preventDefault();
-              handleBarcodeScanned(rawSearch);
-            }
-          }}
-          placeholder={t.pos.searchPlaceholder}
-          className="w-full h-12 pl-10 pr-10 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs"
-        />
-        {rawSearch && (
-          <button
-            type="button"
-            onClick={() => {
-              setRawSearch('');
-              setSearch('');
+      {!canSellHere && (
+        <div className="rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-3.5 py-2.5 text-xs font-semibold text-red-700 dark:text-red-300 flex items-center gap-2">
+          <ShieldAlert className="w-4 h-4 shrink-0" />
+          <span>Sizda tanlangan filialda sotuv qilish huquqi yo'q. Faqat ruxsat etilgan filialni tanlang.</span>
+        </div>
+      )}
+
+      {/* Search Field + Quick Add Product */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            ref={searchInputRef}
+            value={rawSearch}
+            onChange={(e) => setRawSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && rawSearch.trim()) {
+                e.preventDefault();
+                handleBarcodeScanned(rawSearch);
+              }
             }}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 absolute right-2 top-1/2 -translate-y-1/2"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        )}
+            placeholder={t.pos.searchPlaceholder}
+            className="w-full h-12 pl-10 pr-10 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-xs"
+          />
+          {rawSearch && (
+            <button
+              type="button"
+              onClick={() => {
+                setRawSearch('');
+                setSearch('');
+              }}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 absolute right-2 top-1/2 -translate-y-1/2"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            const genCode = `20${Date.now().toString().slice(-10)}`;
+            setQuickCreateBarcode(genCode);
+            setQuickProdName('');
+            setQuickProdPrice(120000);
+            setQuickProdQty(10);
+          }}
+          title="Tezkor yangi mahsulot qo'shish"
+          className="h-12 px-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs font-semibold text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/30 inline-flex items-center gap-1.5 shrink-0 shadow-xs"
+        >
+          <Plus className="w-4 h-4" />
+          <span className="hidden sm:inline">Yangi tovar</span>
+        </button>
       </div>
 
       {/* Attached customer / discount indicator bar */}
@@ -1131,27 +1176,31 @@ export const POSPage: React.FC = () => {
                   e.preventDefault();
                   if (!newCustName.trim()) return;
                   const nowIso = new Date().toISOString();
-                  const created = await upsertCustomer({
-                    id: uid('cust'),
-                    name: newCustName.trim(),
-                    phone: newCustPhone.trim(),
-                    tags: [],
-                    segment: 'new',
-                    totalSpent: 0,
-                    ordersCount: 0,
-                    debtBalance: 0,
-                    storeId: currentStoreId,
-                    createdAt: nowIso,
-                    updatedAt: nowIso,
-                    createdBy: 'usr-cashier',
-                  });
-                  setCartCustomerId(created.id);
-                  setCartLoyaltySpent(0);
-                  setNewCustName('');
-                  setNewCustPhone('+99890');
-                  setNewCustomerOpen(false);
-                  setCustomerModalOpen(false);
-                  notify(`Mijoz "${created.name}" qo'shildi`, 'success');
+                  try {
+                    const created = await upsertCustomer({
+                      id: uid('cust'),
+                      name: newCustName.trim(),
+                      phone: newCustPhone.trim(),
+                      tags: [],
+                      segment: 'new',
+                      totalSpent: 0,
+                      ordersCount: 0,
+                      debtBalance: 0,
+                      storeId: currentStoreId,
+                      createdAt: nowIso,
+                      updatedAt: nowIso,
+                      createdBy: actorId,
+                    });
+                    setCartCustomerId(created.id);
+                    setCartLoyaltySpent(0);
+                    setNewCustName('');
+                    setNewCustPhone('+99890');
+                    setNewCustomerOpen(false);
+                    setCustomerModalOpen(false);
+                    notify(`Mijoz "${created.name}" qo'shildi`, 'success');
+                  } catch (err) {
+                    notify(err instanceof Error ? err.message : "Mijoz qo'shishda xatolik", 'error');
+                  }
                 }}
                 className="p-3 rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 space-y-2 text-xs"
               >
@@ -1391,9 +1440,9 @@ export const POSPage: React.FC = () => {
             </div>
             <p className="text-xs text-slate-500">{t.pos.managerApprovalDesc}</p>
             <form
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
-                const mgr = verifyManagerPin(managerPinVal.trim());
+                const mgr = await verifyManagerPin(managerPinVal.trim());
                 if (!mgr) {
                   notify(t.auth.invalidPin, 'error');
                   return;
@@ -1588,6 +1637,7 @@ export const POSPage: React.FC = () => {
                     .filter(
                       (s) =>
                         s.status === 'completed' &&
+                        s.storeId === currentStoreId &&
                         (!returnSearch ||
                           s.receiptNumber.toLowerCase().includes(returnSearch.toLowerCase()) ||
                           (s.customerName?.toLowerCase().includes(returnSearch.toLowerCase()) ?? false))

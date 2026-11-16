@@ -13,12 +13,14 @@ import {
   Users,
   Shield,
   Phone,
+  Building2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAppStore, uid } from '../store/useAppStore';
 import { formatDateTime, formatMoney, useT } from '../i18n';
 import { Employee, Permission, Role, RoleId } from '../types/models';
 import { exportToExcel } from '../utils/export';
+import { QuickAddKind, QuickAddModal } from '../components/QuickAddModal';
 
 const PERMISSION_GROUPS: { title: string; items: { id: Permission; label: string }[] }[] = [
   {
@@ -71,6 +73,7 @@ export const EmployeesPage: React.FC = () => {
   const db = useAppStore((s) => s.db);
   const can = useAppStore((s) => s.can);
   const currentUser = useAppStore((s) => s.getCurrentUser());
+  const activeStoreId = useAppStore((s) => s.activeStoreId);
   const language = useAppStore((s) => s.language);
   const upsertEmployee = useAppStore((s) => s.upsertEmployee);
   const deleteEmployee = useAppStore((s) => s.deleteEmployee);
@@ -82,7 +85,9 @@ export const EmployeesPage: React.FC = () => {
   const t = useT();
 
   const canManage = can('manage_employees');
+  const isOwner = currentUser?.roleId === 'owner';
   const [activeTab, setActiveTab] = useState<'employees' | 'roles'>('employees');
+  const [quickAdd, setQuickAdd] = useState<{ kind: QuickAddKind } | null>(null);
 
   // Employee modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -91,14 +96,19 @@ export const EmployeesPage: React.FC = () => {
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('+998');
+  const [login, setLogin] = useState('');
+  const [position, setPosition] = useState('');
   const [roleId, setRoleId] = useState<RoleId>('cashier');
+  const [primaryStoreId, setPrimaryStoreId] = useState('');
   const [assignedStoreIds, setAssignedStoreIds] = useState<string[]>([]);
+  const [sellStoreIds, setSellStoreIds] = useState<string[]>([]);
   const [baseSalary, setBaseSalary] = useState(3500000);
   const [commissionPct, setCommissionPct] = useState(1.5);
   const [schedule, setSchedule] = useState('2/2 smena, 09:00–21:00');
   const [pin, setPin] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
+  const [savingEmp, setSavingEmp] = useState(false);
 
   const [useCustomPerms, setUseCustomPerms] = useState(false);
   const [customPerms, setCustomPerms] = useState<Permission[]>([]);
@@ -119,21 +129,44 @@ export const EmployeesPage: React.FC = () => {
     const now = new Date();
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    return db.employees.map((emp) => {
-      const linkedUser = db.users.find((u) => u.id === emp.userId);
-      const empSales = db.sales.filter(
-        (s) => s.cashierId === emp.userId && s.status !== 'returned' && s.status !== 'deferred'
-      );
-      const salesTotal = empSales.reduce((sum, s) => sum + s.totalAmount, 0);
-      const avgCheck = empSales.length > 0 ? Math.round(salesTotal / empSales.length) : 0;
-      const target = db.targets.find((tg) => tg.employeeId === emp.id && tg.month === monthKey)?.targetAmount ?? 30000000;
-      const kpiPct = target > 0 ? Math.round((salesTotal / target) * 100) : 0;
-      const commission = Math.round((salesTotal * emp.commissionPercent) / 100);
-      const bonus = kpiPct >= 100 ? 500000 : 0;
-      const totalPay = emp.baseSalary + commission + bonus;
-      return { emp, linkedUser, salesCount: empSales.length, salesTotal, avgCheck, target, kpiPct, commission, bonus, totalPay };
-    });
-  }, [db]);
+    return db.employees
+      .filter((emp) => {
+        if (activeStoreId === 'all') return true;
+        const linked = db.users.find((u) => u.id === emp.userId);
+        const empStores = new Set<string>([
+          emp.storeId,
+          emp.primaryStoreId ?? '',
+          ...(emp.assignedStoreIds ?? []),
+          ...(linked?.assignedStoreIds ?? []),
+        ]);
+        return empStores.has(activeStoreId);
+      })
+      .map((emp) => {
+        const linkedUser = db.users.find((u) => u.id === emp.userId);
+        const empSales = db.sales.filter(
+          (s) =>
+            s.cashierId === emp.userId &&
+            s.status !== 'returned' &&
+            s.status !== 'deferred' &&
+            (activeStoreId === 'all' || s.storeId === activeStoreId)
+        );
+        const salesTotal = empSales.reduce((sum, s) => sum + s.totalAmount, 0);
+        const avgCheck = empSales.length > 0 ? Math.round(salesTotal / empSales.length) : 0;
+        const target = db.targets.find((tg) => tg.employeeId === emp.id && tg.month === monthKey)?.targetAmount ?? 30000000;
+        const kpiPct = target > 0 ? Math.round((salesTotal / target) * 100) : 0;
+        const commission = Math.round((salesTotal * emp.commissionPercent) / 100);
+        const bonus = kpiPct >= 100 ? 500000 : 0;
+        const totalPay = emp.baseSalary + commission + bonus;
+        return { emp, linkedUser, salesCount: empSales.length, salesTotal, avgCheck, target, kpiPct, commission, bonus, totalPay };
+      });
+  }, [db, activeStoreId]);
+
+  const scopedShifts = useMemo(() => {
+    if (!db) return [];
+    return activeStoreId === 'all'
+      ? db.cashShifts
+      : db.cashShifts.filter((sh) => sh.storeId === activeStoreId);
+  }, [db, activeStoreId]);
 
   if (!db) return null;
 
@@ -143,23 +176,21 @@ export const EmployeesPage: React.FC = () => {
     return t.auth.roles[rId as keyof typeof t.auth.roles] ?? rId;
   };
 
-  const generateUniquePin = () => {
-    const used = new Set(db.users.map((u) => u.pin));
-    for (let i = 0; i < 50; i++) {
-      const candidate = String(Math.floor(10000 + Math.random() * 89999));
-      if (!used.has(candidate)) return candidate;
-    }
-    return String(Math.floor(10000 + Math.random() * 89999));
-  };
+  const generateRandomPin = () => String(Math.floor(10000 + Math.random() * 89999));
 
   const openCreateModal = () => {
-    const generatedPin = generateUniquePin();
+    const generatedPin = generateRandomPin();
     const defaultRoleId = db.roles.find((r) => r.id === 'cashier')?.id ?? db.roles.find((r) => r.id !== 'owner')?.id ?? 'cashier';
+    const defaultSt = activeStoreId !== 'all' ? activeStoreId : db.stores[0]?.id ?? '';
     setEditingEmp(null);
     setName('');
     setPhone('+998');
+    setLogin('');
+    setPosition('Sotuvchi-kassir');
     setRoleId(defaultRoleId);
-    setAssignedStoreIds(db.stores[0] ? [db.stores[0].id] : []);
+    setPrimaryStoreId(defaultSt);
+    setAssignedStoreIds(defaultSt ? [defaultSt] : []);
+    setSellStoreIds(defaultSt ? [defaultSt] : []);
     setBaseSalary(3500000);
     setCommissionPct(1.5);
     setSchedule('2/2 smena, 09:00–21:00');
@@ -176,16 +207,39 @@ export const EmployeesPage: React.FC = () => {
 
   const openEditModal = (emp: Employee) => {
     const linkedUser = db.users.find((u) => u.id === emp.userId);
+    if ((emp.roleId === 'owner' || linkedUser?.roleId === 'owner') && !isOwner) {
+      notify("Egasi (Owner) hisobini faqat Egasi tahrirlashi mumkin", 'error');
+      return;
+    }
+    const pStore = emp.primaryStoreId || linkedUser?.primaryStoreId || emp.storeId || db.stores[0]?.id || '';
+    const assigned = linkedUser?.assignedStoreIds?.length
+      ? linkedUser.assignedStoreIds
+      : emp.assignedStoreIds?.length
+      ? emp.assignedStoreIds
+      : pStore
+      ? [pStore]
+      : [];
+    const sellable = linkedUser?.sellStoreIds?.length
+      ? linkedUser.sellStoreIds
+      : emp.sellStoreIds?.length
+      ? emp.sellStoreIds
+      : assigned;
+
     setEditingEmp(emp);
     setName(emp.name);
     setPhone(linkedUser?.phone || emp.phone);
+    setLogin(linkedUser?.login || emp.login || '');
+    setPosition(linkedUser?.position || emp.position || '');
     setRoleId(emp.roleId);
-    setAssignedStoreIds(linkedUser?.assignedStoreIds?.length ? linkedUser.assignedStoreIds : [emp.storeId]);
+    setPrimaryStoreId(pStore);
+    setAssignedStoreIds(assigned);
+    setSellStoreIds(sellable);
     setBaseSalary(emp.baseSalary);
     setCommissionPct(emp.commissionPercent);
     setSchedule(emp.schedule);
-    setPin(linkedUser?.pin ?? '51111');
-    setPassword(linkedUser?.password ?? linkedUser?.pin ?? '');
+    // Security: backend masks PIN/password as '••••'. Keep empty unless admin explicitly enters a new one.
+    setPin('');
+    setPassword('');
     const hasCustom = Array.isArray(linkedUser?.customPermissions);
     setUseCustomPerms(hasCustom);
     const rolePerms = db.roles.find((r) => r.id === emp.roleId)?.permissions ?? [];
@@ -220,10 +274,26 @@ export const EmployeesPage: React.FC = () => {
     setCustomPerms((prev) => (prev.includes(perm) ? prev.filter((p) => p !== perm) : [...prev, perm]));
   };
 
-  const toggleStore = (id: string) => {
+  const toggleAssignedStore = (id: string) => {
     setAssignedStoreIds((prev) => {
       if (prev.includes(id)) {
-        return prev.length > 1 ? prev.filter((x) => x !== id) : prev;
+        if (prev.length <= 1) return prev;
+        const next = prev.filter((x) => x !== id);
+        if (primaryStoreId === id) setPrimaryStoreId(next[0]);
+        setSellStoreIds((sPrev) => sPrev.filter((x) => x !== id));
+        return next;
+      }
+      return [...prev, id];
+    });
+  };
+
+  const toggleSellStore = (id: string) => {
+    setSellStoreIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((x) => x !== id);
+      }
+      if (!assignedStoreIds.includes(id)) {
+        setAssignedStoreIds((aPrev) => [...aPrev, id]);
       }
       return [...prev, id];
     });
@@ -240,18 +310,16 @@ export const EmployeesPage: React.FC = () => {
     }
 
     const cleanPin = pin.replace(/\D/g, '');
-    if (cleanPin.length < 4 || cleanPin.length > 6) {
-      notify("PIN-kod 4 dan 6 tagacha raqamdan iborat bo'lishi kerak", 'error');
+    if (!editingEmp && (cleanPin.length < 4 || cleanPin.length > 6)) {
+      notify("Yangi xodim uchun PIN-kod 4–6 raqam bo'lishi kerak", 'error');
+      return;
+    }
+    if (editingEmp && pin.trim().length > 0 && (cleanPin.length < 4 || cleanPin.length > 6)) {
+      notify("Yangi PIN-kod 4–6 raqam bo'lishi kerak", 'error');
       return;
     }
 
     const targetUserId = editingEmp ? editingEmp.userId : uid('usr');
-    const duplicatePin = db.users.find((u) => u.id !== targetUserId && u.pin === cleanPin && u.isActive);
-    if (duplicatePin) {
-      notify(`PIN-kod (${cleanPin}) ${duplicatePin.name} da band! Boshqa PIN tanlang.`, 'error');
-      return;
-    }
-
     const duplicatePhone = db.users.find(
       (u) => u.id !== targetUserId && u.phone.replace(/\D/g, '') === phoneDigits && u.isActive
     );
@@ -260,57 +328,88 @@ export const EmployeesPage: React.FC = () => {
       return;
     }
 
-    const finalPassword = password.trim() || cleanPin;
-    if (finalPassword.length < 4) {
+    const cleanLogin = login.trim();
+    if (cleanLogin) {
+      const dupLogin = db.users.find(
+        (u) => u.id !== targetUserId && u.login?.toLowerCase() === cleanLogin.toLowerCase()
+      );
+      if (dupLogin) {
+        notify(`Login (${cleanLogin}) boshqa xodimda band!`, 'error');
+        return;
+      }
+    }
+
+    const trimmedPass = password.trim();
+    if (trimmedPass.length > 0 && trimmedPass.length < 4) {
       notify("Kirish paroli kamida 4 ta belgidan iborat bo'lishi kerak", 'error');
       return;
     }
 
+    const effectivePrimary = primaryStoreId || assignedStoreIds[0] || db.stores[0]?.id || 'store-toraqorgon';
+    const effectiveAssigned = Array.from(new Set([effectivePrimary, ...assignedStoreIds]));
+    const effectiveSell = sellStoreIds.length > 0 ? sellStoreIds : [effectivePrimary];
+
     const nowIso = new Date().toISOString();
-    const primaryStoreId = assignedStoreIds[0] || db.stores[0]?.id || 'store-chilonzor';
     const empId = editingEmp ? editingEmp.id : uid('emp');
 
-    await upsertEmployee(
-      {
-        id: empId,
-        userId: targetUserId,
-        name: name.trim(),
-        phone: cleanPhone,
-        roleId,
-        baseSalary,
-        commissionPercent: commissionPct,
-        schedule: schedule.trim() || '2/2 smena, 09:00–21:00',
-        hiredAt: editingEmp ? editingEmp.hiredAt : nowIso,
-        storeId: primaryStoreId,
-        createdAt: editingEmp ? editingEmp.createdAt : nowIso,
-        updatedAt: nowIso,
-        createdBy: currentUser?.id ?? 'usr-owner',
-      },
-      {
-        pin: cleanPin,
-        password: finalPassword,
-        assignedStoreIds: assignedStoreIds.length ? assignedStoreIds : [primaryStoreId],
-        ...(useCustomPerms ? { customPermissions: customPerms } : {}),
-      },
-      { clearCustomPermissions: !useCustomPerms }
-    );
+    setSavingEmp(true);
+    try {
+      await upsertEmployee(
+        {
+          id: empId,
+          userId: targetUserId,
+          name: name.trim(),
+          phone: cleanPhone,
+          login: cleanLogin || undefined,
+          position: position.trim() || undefined,
+          roleId,
+          primaryStoreId: effectivePrimary,
+          assignedStoreIds: effectiveAssigned,
+          sellStoreIds: effectiveSell,
+          baseSalary,
+          commissionPercent: commissionPct,
+          schedule: schedule.trim() || '2/2 smena, 09:00–21:00',
+          hiredAt: editingEmp ? editingEmp.hiredAt : nowIso,
+          storeId: effectivePrimary,
+          createdAt: editingEmp ? editingEmp.createdAt : nowIso,
+          updatedAt: nowIso,
+          createdBy: currentUser?.id ?? 'usr-owner',
+        },
+        {
+          ...(cleanPin ? { pin: cleanPin } : {}),
+          ...(trimmedPass
+            ? { password: trimmedPass }
+            : !editingEmp && cleanPin
+            ? { password: cleanPin }
+            : {}),
+          assignedStoreIds: effectiveAssigned,
+          sellStoreIds: effectiveSell,
+          ...(useCustomPerms ? { customPermissions: customPerms } : {}),
+        },
+        { clearCustomPermissions: !useCustomPerms }
+      );
 
-    if (!editingEmp) {
-      const now = new Date();
-      await upsertTarget({
-        id: uid('tgt'),
-        employeeId: empId,
-        month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
-        targetAmount: 30000000,
-        storeId: primaryStoreId,
-        createdAt: nowIso,
-        updatedAt: nowIso,
-        createdBy: currentUser?.id ?? 'usr-owner',
-      });
+      if (!editingEmp) {
+        const now = new Date();
+        await upsertTarget({
+          id: uid('tgt'),
+          employeeId: empId,
+          month: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`,
+          targetAmount: 30000000,
+          storeId: effectivePrimary,
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          createdBy: currentUser?.id ?? 'usr-owner',
+        });
+      }
+
+      notify(editingEmp ? "Xodim ma'lumotlari yangilandi" : "Yangi xodim qo'shildi", 'success');
+      setModalOpen(false);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Xodimni saqlashda xatolik", 'error');
+    } finally {
+      setSavingEmp(false);
     }
-
-    notify(editingEmp ? "Xodim ma'lumotlari yangilandi" : "Yangi xodim (nomer va PIN-kod) qo'shildi", 'success');
-    setModalOpen(false);
   };
 
   const handleQuickCreateInlineRole = async () => {
@@ -319,20 +418,24 @@ export const EmployeesPage: React.FC = () => {
       notify('Yangi rol nomini kiriting', 'error');
       return;
     }
-    const newId = uid('role');
-    const permsToUse = useCustomPerms
-      ? customPerms
-      : db.roles.find((r) => r.id === roleId)?.permissions ?? ['view_dashboard', 'use_pos', 'view_catalog'];
-    await upsertRole({
-      id: newId,
-      nameUz: clean,
-      nameRu: clean,
-      permissions: [...permsToUse],
-    });
-    setRoleId(newId);
-    setInlineRoleName('');
-    setInlineRoleOpen(false);
-    notify(`"${clean}" roli yaratildi va tanlandi`, 'success');
+    try {
+      const newId = uid('role');
+      const permsToUse = useCustomPerms
+        ? customPerms
+        : db.roles.find((r) => r.id === roleId)?.permissions ?? ['view_dashboard', 'use_pos', 'view_catalog'];
+      await upsertRole({
+        id: newId,
+        nameUz: clean,
+        nameRu: clean,
+        permissions: [...permsToUse],
+      });
+      setRoleId(newId);
+      setInlineRoleName('');
+      setInlineRoleOpen(false);
+      notify(`"${clean}" roli yaratildi va tanlandi`, 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Rol yaratishda xatolik', 'error');
+    }
   };
 
   const handleCreateRole = async (e: React.FormEvent) => {
@@ -342,23 +445,31 @@ export const EmployeesPage: React.FC = () => {
       notify('Rol nomini kiriting', 'error');
       return;
     }
-    const newId = uid('role');
-    await upsertRole({
-      id: newId,
-      nameUz: clean,
-      nameRu: clean,
-      permissions: [...newRolePerms],
-    });
-    setNewRoleName('');
-    notify(`"${clean}" roli yaratildi`, 'success');
+    try {
+      const newId = uid('role');
+      await upsertRole({
+        id: newId,
+        nameUz: clean,
+        nameRu: clean,
+        permissions: [...newRolePerms],
+      });
+      setNewRoleName('');
+      notify(`"${clean}" roli yaratildi`, 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Rol yaratishda xatolik', 'error');
+    }
   };
 
   const toggleMatrixPermission = async (targetRoleId: RoleId, perm: Permission) => {
     const role = db.roles.find((r) => r.id === targetRoleId);
     if (!role) return;
-    const exists = role.permissions.includes(perm);
-    const nextPerms = exists ? role.permissions.filter((p) => p !== perm) : [...role.permissions, perm];
-    await updateRolePermissions(targetRoleId, nextPerms);
+    try {
+      const exists = role.permissions.includes(perm);
+      const nextPerms = exists ? role.permissions.filter((p) => p !== perm) : [...role.permissions, perm];
+      await updateRolePermissions(targetRoleId, nextPerms);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Ruxsatni o'zgartirishda xatolik", 'error');
+    }
   };
 
   return (
@@ -376,7 +487,7 @@ export const EmployeesPage: React.FC = () => {
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>{t.employees.title} ({db.employees.length})</span>
+            <span>{t.employees.title} ({payrollRows.length})</span>
           </button>
           <button
             type="button"
@@ -399,16 +510,21 @@ export const EmployeesPage: React.FC = () => {
                 type="button"
                 onClick={() =>
                   exportToExcel(
-                    payrollRows.map((r) => ({
-                      Xodim: r.emp.name,
-                      Telefon: r.linkedUser?.phone || r.emp.phone,
-                      PIN: r.linkedUser?.pin ?? '',
-                      Rol: getRoleLabel(r.emp.roleId),
-                      Sotuvlar: r.salesTotal,
-                      OylikMaosh: r.emp.baseSalary,
-                      FoizBonus: r.commission + r.bonus,
-                      JamiTolov: r.totalPay,
-                    })),
+                    payrollRows.map((r) => {
+                      const pStore = db.stores.find((s) => s.id === (r.emp.primaryStoreId || r.emp.storeId))?.name ?? '';
+                      return {
+                        Xodim: r.emp.name,
+                        Login: r.linkedUser?.login || r.emp.login || '',
+                        Telefon: r.linkedUser?.phone || r.emp.phone,
+                        Lavozim: r.emp.position || '',
+                        Rol: getRoleLabel(r.emp.roleId),
+                        Filial: pStore,
+                        Sotuvlar: r.salesTotal,
+                        OylikMaosh: r.emp.baseSalary,
+                        FoizBonus: r.commission + r.bonus,
+                        JamiTolov: r.totalPay,
+                      };
+                    }),
                     'xodimlar-oylik'
                   )
                 }
@@ -441,8 +557,8 @@ export const EmployeesPage: React.FC = () => {
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/40 text-slate-500 font-semibold">
-                  <th className="py-3 px-3">Xodim va Rol</th>
-                  <th className="py-3 px-3">Telefon / PIN-kod</th>
+                  <th className="py-3 px-3">Xodim / Rol / Filial</th>
+                  <th className="py-3 px-3">Telefon / Login</th>
                   <th className="py-3 px-3 text-right">Cheklar / Savdo</th>
                   <th className="py-3 px-3 text-right">Reja / KPI</th>
                   <th className="py-3 px-3 text-right">{t.employees.baseSalary}</th>
@@ -458,20 +574,36 @@ export const EmployeesPage: React.FC = () => {
                     ? r.linkedUser!.customPermissions!.length
                     : db.roles.find((rl) => rl.id === r.emp.roleId)?.permissions.length ?? 0;
                   const displayPhone = r.linkedUser?.phone || r.emp.phone;
+                  const displayLogin = r.linkedUser?.login || r.emp.login;
+                  const primaryStoreName =
+                    db.stores.find((s) => s.id === (r.emp.primaryStoreId || r.emp.storeId))?.name ?? '—';
+                  const isOwnerRow = r.emp.roleId === 'owner' || r.emp.userId === 'usr-owner';
+                  const canEditRow = !isOwnerRow || isOwner;
+                  const canDeleteRow = !isOwnerRow && r.emp.userId !== currentUser?.id;
 
                   return (
                     <tr key={r.emp.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30">
                       <td className="py-3 px-3">
-                        <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
                           <span>{r.emp.name}</span>
+                          {r.emp.position && (
+                            <span className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px]">
+                              {r.emp.position}
+                            </span>
+                          )}
                           {isCustom && (
                             <span className="px-1.5 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-semibold">
                               Maxsus ({permCount})
                             </span>
                           )}
                         </div>
-                        <div className="text-[11px] text-slate-500">
-                          {getRoleLabel(r.emp.roleId)} · {r.emp.schedule}
+                        <div className="text-[11px] text-slate-500 flex items-center gap-1.5 mt-0.5">
+                          <span>{getRoleLabel(r.emp.roleId)}</span>
+                          <span>·</span>
+                          <span className="inline-flex items-center gap-0.5 text-teal-700 dark:text-teal-400 font-medium">
+                            <Building2 className="w-3 h-3" />
+                            {primaryStoreName}
+                          </span>
                         </div>
                       </td>
                       <td className="py-3 px-3">
@@ -481,7 +613,7 @@ export const EmployeesPage: React.FC = () => {
                         </div>
                         <div className="font-mono text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
                           <KeyRound className="w-3 h-3 text-slate-400 shrink-0" />
-                          <span>PIN: {r.linkedUser?.pin ?? '—'}</span>
+                          <span>{displayLogin ? `@${displayLogin}` : 'PIN himoyalangan'}</span>
                         </div>
                       </td>
                       <td className="py-3 px-3 text-right font-mono tabular-nums">
@@ -506,15 +638,17 @@ export const EmployeesPage: React.FC = () => {
                       {canManage && (
                         <td className="py-3 px-3 text-right whitespace-nowrap">
                           <div className="inline-flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => openEditModal(r.emp)}
-                              title="Tahrirlash (nomer, PIN, rol, huquqlar)"
-                              className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 inline-flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            {r.emp.userId !== 'usr-owner' && r.emp.userId !== currentUser?.id && (
+                            {canEditRow && (
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(r.emp)}
+                                title="Tahrirlash (nomer, login, PIN, rol, huquqlar)"
+                                className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 inline-flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {canDeleteRow && (
                               <button
                                 type="button"
                                 onClick={() => setDeleteTarget(r.emp)}
@@ -551,7 +685,7 @@ export const EmployeesPage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {db.cashShifts.map((sh) => (
+                {scopedShifts.map((sh) => (
                   <tr key={sh.id}>
                     <td className="py-2.5 px-3 font-mono font-bold">{sh.number}</td>
                     <td className="py-2.5 px-3">{sh.cashierName}</td>
@@ -790,9 +924,28 @@ export const EmployeesPage: React.FC = () => {
               </div>
 
               <div>
+                <label className="block text-slate-500 mb-1 font-medium">Login (ixtiyoriy)</label>
+                <input
+                  value={login}
+                  onChange={(e) => setLogin(e.target.value)}
+                  placeholder="masalan: jasur_kassir"
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-slate-500 mb-1 font-medium">Lavozim</label>
+                <input
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                  placeholder="Kassir / Menejer / Omborchi"
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs"
+                />
+              </div>
+
+              <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-slate-500 font-medium">Asosiy rol</label>
-                  {editingEmp?.userId !== 'usr-owner' && (
+                  {editingEmp?.userId !== 'usr-owner' && editingEmp?.roleId !== 'owner' && (
                     <button
                       type="button"
                       onClick={() => setInlineRoleOpen((v) => !v)}
@@ -812,11 +965,11 @@ export const EmployeesPage: React.FC = () => {
                       setCustomPerms(db.roles.find((r) => r.id === nextRole)?.permissions ?? []);
                     }
                   }}
-                  disabled={editingEmp?.userId === 'usr-owner'}
+                  disabled={editingEmp?.userId === 'usr-owner' || editingEmp?.roleId === 'owner'}
                   className="w-full h-10 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs"
                 >
                   {db.roles
-                    .filter((r) => r.id !== 'owner' || editingEmp?.userId === 'usr-owner')
+                    .filter((r) => r.id !== 'owner' || editingEmp?.userId === 'usr-owner' || editingEmp?.roleId === 'owner')
                     .map((r) => (
                       <option key={r.id} value={r.id}>
                         {language === 'ru' ? r.nameRu : r.nameUz}
@@ -852,9 +1005,11 @@ export const EmployeesPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-slate-500 mb-1 font-medium">PIN-kod (4–6 raqam) *</label>
+                <label className="block text-slate-500 mb-1 font-medium">
+                  PIN-kod (4–6 raqam) {editingEmp ? "(bo'sh = o'zgarmaydi)" : '*'}
+                </label>
                 <input
-                  required
+                  required={!editingEmp}
                   maxLength={6}
                   inputMode="numeric"
                   value={pin}
@@ -865,19 +1020,21 @@ export const EmployeesPage: React.FC = () => {
                       setPassword(nextPin);
                     }
                   }}
-                  placeholder="51111"
+                  placeholder={editingEmp ? "O'zgartirmaslik uchun bo'sh qoldiring" : '51111'}
                   className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono tracking-widest text-center"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-500 mb-1 font-medium">Kirish paroli (bo'sh qolsa PIN bilan bir xil)</label>
+                <label className="block text-slate-500 mb-1 font-medium">
+                  Kirish paroli {editingEmp ? "(bo'sh = o'zgarmaydi)" : "(bo'sh qolsa PIN bilan bir xil)"}
+                </label>
                 <div className="relative">
                   <input
                     type={showPass ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder={pin || '51111'}
+                    placeholder={editingEmp ? "O'zgartirmaslik uchun bo'sh qoldiring" : pin || '51111'}
                     className="w-full h-10 pl-3 pr-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono"
                   />
                   <button
@@ -912,26 +1069,82 @@ export const EmployeesPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Branch Assignment */}
-            <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <div className="font-semibold text-slate-700 dark:text-slate-200">Biriktirilgan filiallar</div>
-              <div className="flex flex-wrap gap-2">
-                {db.stores.map((st) => {
-                  const checked = assignedStoreIds.includes(st.id);
-                  return (
-                    <label
-                      key={st.id}
-                      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer ${
-                        checked
-                          ? 'border-teal-600 bg-teal-50 dark:bg-teal-950/40 text-teal-800 dark:text-teal-300 font-semibold'
-                          : 'border-slate-200 dark:border-slate-800 text-slate-500'
-                      }`}
-                    >
-                      <input type="checkbox" checked={checked} onChange={() => toggleStore(st.id)} />
-                      <span>{st.name}</span>
-                    </label>
-                  );
-                })}
+            {/* Primary Branch & Branch Scoping */}
+            <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-semibold text-slate-700 dark:text-slate-200">Asosiy filial</label>
+                  <button
+                    type="button"
+                    onClick={() => setQuickAdd({ kind: 'store' })}
+                    className="text-[11px] font-semibold text-teal-700 dark:text-teal-400 hover:underline inline-flex items-center gap-0.5"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Yangi filial</span>
+                  </button>
+                </div>
+                <select
+                  value={primaryStoreId}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    setPrimaryStoreId(nextId);
+                    if (!assignedStoreIds.includes(nextId)) {
+                      setAssignedStoreIds((prev) => [...prev, nextId]);
+                    }
+                    if (!sellStoreIds.includes(nextId)) {
+                      setSellStoreIds((prev) => [...prev, nextId]);
+                    }
+                  }}
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs"
+                >
+                  {db.stores.map((st) => (
+                    <option key={st.id} value={st.id}>{st.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="font-semibold text-slate-700 dark:text-slate-200 mb-1.5">Biriktirilgan filiallar (ko'rish huquqi)</div>
+                <div className="flex flex-wrap gap-2">
+                  {db.stores.map((st) => {
+                    const checked = assignedStoreIds.includes(st.id);
+                    return (
+                      <label
+                        key={st.id}
+                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer ${
+                          checked
+                            ? 'border-teal-600 bg-teal-50 dark:bg-teal-950/40 text-teal-800 dark:text-teal-300 font-semibold'
+                            : 'border-slate-200 dark:border-slate-800 text-slate-500'
+                        }`}
+                      >
+                        <input type="checkbox" checked={checked} onChange={() => toggleAssignedStore(st.id)} />
+                        <span>{st.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <div className="font-semibold text-slate-700 dark:text-slate-200 mb-1.5">Sotuv qilish huquqi (Kassa / POS)</div>
+                <div className="flex flex-wrap gap-2">
+                  {db.stores.map((st) => {
+                    const checked = sellStoreIds.includes(st.id);
+                    return (
+                      <label
+                        key={st.id}
+                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer ${
+                          checked
+                            ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 font-semibold'
+                            : 'border-slate-200 dark:border-slate-800 text-slate-500'
+                        }`}
+                      >
+                        <input type="checkbox" checked={checked} onChange={() => toggleSellStore(st.id)} />
+                        <span>{st.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
@@ -1002,7 +1215,7 @@ export const EmployeesPage: React.FC = () => {
                           <input
                             type="checkbox"
                             checked={checked}
-                            disabled={editingEmp?.userId === 'usr-owner'}
+                            disabled={editingEmp?.userId === 'usr-owner' || editingEmp?.roleId === 'owner'}
                             onChange={() => togglePerm(item.id)}
                           />
                           <span>{item.label}</span>
@@ -1024,9 +1237,10 @@ export const EmployeesPage: React.FC = () => {
               </button>
               <button
                 type="submit"
-                className="h-10 px-5 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold"
+                disabled={savingEmp}
+                className="h-10 px-5 rounded-lg bg-teal-700 hover:bg-teal-800 disabled:opacity-60 text-white font-semibold"
               >
-                {t.common.save}
+                {savingEmp ? 'Saqlanmoqda...' : t.common.save}
               </button>
             </div>
           </form>
@@ -1093,13 +1307,17 @@ export const EmployeesPage: React.FC = () => {
               type="button"
               onClick={async () => {
                 if (!editingRole.nameUz.trim()) return;
-                await upsertRole({
-                  ...editingRole,
-                  nameUz: editingRole.nameUz.trim(),
-                  nameRu: editingRole.nameRu.trim() || editingRole.nameUz.trim(),
-                });
-                notify('Rol yangilandi', 'success');
-                setEditingRole(null);
+                try {
+                  await upsertRole({
+                    ...editingRole,
+                    nameUz: editingRole.nameUz.trim(),
+                    nameRu: editingRole.nameRu.trim() || editingRole.nameUz.trim(),
+                  });
+                  notify('Rol yangilandi', 'success');
+                  setEditingRole(null);
+                } catch (err) {
+                  notify(err instanceof Error ? err.message : 'Rolni saqlashda xatolik', 'error');
+                }
               }}
               className="w-full h-10 rounded-lg bg-teal-700 hover:bg-teal-800 text-white font-semibold"
             >
@@ -1179,6 +1397,20 @@ export const EmployeesPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <QuickAddModal
+        open={Boolean(quickAdd)}
+        kind={quickAdd?.kind ?? null}
+        storeId={primaryStoreId}
+        onClose={() => setQuickAdd(null)}
+        onCreated={(created) => {
+          if (quickAdd?.kind === 'store') {
+            setPrimaryStoreId(created.id);
+            setAssignedStoreIds((prev) => Array.from(new Set([...prev, created.id])));
+            setSellStoreIds((prev) => Array.from(new Set([...prev, created.id])));
+          }
+        }}
+      />
     </div>
   );
 };

@@ -29,6 +29,7 @@ import { generateEAN13, renderBarcodeToSvgString } from '../utils/barcode';
 import { exportToCsv, exportToExcel, parseSpreadsheetFile } from '../utils/export';
 import { printHtmlDocument } from '../utils/print';
 import { BarcodeSvg, ProductThumb } from '../components/BarcodeSvg';
+import { QuickAddKind, QuickAddModal } from '../components/QuickAddModal';
 
 const PRESET_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '38', '39', '40', '41', '42', '43', '44'];
 const PRESET_COLORS = ['Qora', 'Oq', 'Sariq', "Ko'k", 'Qizil', 'Kulrang', 'Bej', 'Yashil', 'Jigarrang'];
@@ -52,6 +53,7 @@ function getColorSwatch(colorName?: string): string {
 export const CatalogPage: React.FC = () => {
   const db = useAppStore((s) => s.db);
   const can = useAppStore((s) => s.can);
+  const currentUser = useAppStore((s) => s.getCurrentUser());
   const language = useAppStore((s) => s.language);
   const activeStoreId = useAppStore((s) => s.activeStoreId);
   const getVariantStock = useAppStore((s) => s.getVariantStock);
@@ -70,6 +72,7 @@ export const CatalogPage: React.FC = () => {
   const canViewCost = can('view_profit_cost');
   const canEdit = can('edit_catalog');
   const canBulk = can('bulk_edit_prices');
+  const [quickAdd, setQuickAdd] = useState<{ kind: QuickAddKind } | null>(null);
 
   const [rawSearch, setRawSearch] = useState('');
   const [search, setSearch] = useState('');
@@ -119,6 +122,7 @@ export const CatalogPage: React.FC = () => {
   const filteredProducts = useMemo(() => {
     if (!db) return [];
     return db.products.filter((p) => {
+      if (activeStoreId !== 'all' && p.storeId !== activeStoreId) return false;
       if (categoryFilter !== 'all' && p.categoryId !== categoryFilter) return false;
       if (brandFilter !== 'all' && p.brandId !== brandFilter) return false;
       if (!search) return true;
@@ -132,9 +136,14 @@ export const CatalogPage: React.FC = () => {
       );
       return inName || inVariant;
     });
-  }, [db, categoryFilter, brandFilter, search]);
+  }, [db, activeStoreId, categoryFilter, brandFilter, search]);
 
   if (!db) return null;
+
+  const activeWarehouseId = activeStoreId !== 'all' ? getWarehouseForStore(activeStoreId) : undefined;
+  const availableColors = db.customColors && db.customColors.length > 0 ? db.customColors : PRESET_COLORS;
+  const availableSizes = db.customSizes && db.customSizes.length > 0 ? db.customSizes : PRESET_SIZES;
+  const actorId = currentUser?.id ?? 'usr-owner';
 
   const getCategoryName = (id: string) => {
     const c = db.categories.find((x) => x.id === id);
@@ -160,10 +169,10 @@ export const CatalogPage: React.FC = () => {
     const nowIso = new Date().toISOString();
     const pId = uid('prod');
     const firstVarId = uid('var');
-    const storeId = activeStoreId !== 'all' ? activeStoreId : db.stores[0]?.id ?? 'store-chilonzor';
+    const storeId = activeStoreId !== 'all' ? activeStoreId : db.stores[0]?.id ?? 'store-toraqorgon';
     setVariantInitialStocks({ [firstVarId]: 0 });
-    setActiveBuilderColor('Qora');
-    setColorSizeDrafts({ M: 3 });
+    setActiveBuilderColor(availableColors[0] || 'Qora');
+    setColorSizeDrafts({ [availableSizes[2] || 'M']: 3 });
     setCustomSizeInput('');
     setMatrixCost(100000);
     setMatrixRetail(165000);
@@ -176,7 +185,7 @@ export const CatalogPage: React.FC = () => {
       collection: '',
       unit: 'dona',
       description: '',
-      supplierId: db.suppliers[0]?.id,
+      supplierId: db.suppliers.find((s) => s.storeId === storeId)?.id ?? db.suppliers[0]?.id,
       tags: [],
       isPublishedOnline: true,
       variants: [
@@ -184,8 +193,8 @@ export const CatalogPage: React.FC = () => {
           id: firstVarId,
           productId: pId,
           sku: `SBO-${Math.floor(100 + Math.random() * 899)}-1`,
-          size: 'M',
-          color: 'Qora',
+          size: availableSizes[2] || 'M',
+          color: availableColors[0] || 'Qora',
           purchasePrice: 100000,
           retailPrice: 165000,
           wholesalePrice: 140000,
@@ -194,13 +203,13 @@ export const CatalogPage: React.FC = () => {
           storeId,
           createdAt: nowIso,
           updatedAt: nowIso,
-          createdBy: 'usr-owner',
+          createdBy: actorId,
         },
       ],
       storeId,
       createdAt: nowIso,
       updatedAt: nowIso,
-      createdBy: 'usr-owner',
+      createdBy: actorId,
     });
   };
 
@@ -310,7 +319,7 @@ export const CatalogPage: React.FC = () => {
           storeId: editingProduct.storeId,
           createdAt: nowIso,
           updatedAt: nowIso,
-          createdBy: 'usr-owner',
+          createdBy: actorId,
         });
         nextStockMap[vId] = qty;
         addedCount += 1;
@@ -330,25 +339,18 @@ export const CatalogPage: React.FC = () => {
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct || !editingProduct.name.trim()) return;
-    await upsertProduct(editingProduct);
-
-    const whId = getWarehouseForStore(editingProduct.storeId);
-    for (const v of editingProduct.variants) {
-      const addQty = variantInitialStocks[v.id] ?? 0;
-      if (addQty > 0) {
-        await quickAddStock(
-          editingProduct.id,
-          v.id,
-          whId,
-          addQty,
-          `Boshlang'ich kirim (${[v.size, v.color].filter(Boolean).join(' / ')})`
-        );
-      }
+    try {
+      const whId = getWarehouseForStore(editingProduct.storeId);
+      await upsertProduct(editingProduct, {
+        warehouseId: whId,
+        initialQtyByVariant: variantInitialStocks,
+      });
+      notify(`${editingProduct.name} (${editingProduct.variants.length} variant) saqlandi`, 'success');
+      setEditingProduct(null);
+      setVariantInitialStocks({});
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Mahsulotni saqlashda xatolik', 'error');
     }
-
-    notify(`${editingProduct.name} (${editingProduct.variants.length} variant) saqlandi`, 'success');
-    setEditingProduct(null);
-    setVariantInitialStocks({});
   };
 
   const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -405,7 +407,7 @@ export const CatalogPage: React.FC = () => {
         ...(canViewCost ? { Tannarx: v.purchasePrice } : {}),
         SotuvNarxi: v.retailPrice,
         UlgurjiNarxi: v.wholesalePrice,
-        Qoldiq: getVariantStock(v.id),
+        Qoldiq: getVariantStock(v.id, activeWarehouseId),
       }))
     );
     if (type === 'xlsx') exportToExcel(rows, 'shu-brend-katalog');
@@ -423,7 +425,7 @@ export const CatalogPage: React.FC = () => {
         return;
       }
       const nowIso = new Date().toISOString();
-      const storeId = activeStoreId !== 'all' ? activeStoreId : db.stores[0]?.id ?? 'store-chilonzor';
+      const storeId = activeStoreId !== 'all' ? activeStoreId : db.stores[0]?.id ?? 'store-toraqorgon';
       const whId = getWarehouseForStore(storeId);
       const newProducts: Product[] = [];
       const stocks: { productId: string; variantId: string; warehouseId: string; qty: number; unitCost: number }[] = [];
@@ -459,13 +461,13 @@ export const CatalogPage: React.FC = () => {
               storeId,
               createdAt: nowIso,
               updatedAt: nowIso,
-              createdBy: 'usr-owner',
+              createdBy: actorId,
             },
           ],
           storeId,
           createdAt: nowIso,
           updatedAt: nowIso,
-          createdBy: 'usr-owner',
+          createdBy: actorId,
         });
         if (qty > 0) {
           stocks.push({ productId: pId, variantId: vId, warehouseId: whId, qty, unitCost: purchasePrice });
@@ -698,7 +700,7 @@ export const CatalogPage: React.FC = () => {
                 </tr>
               ) : (
                 filteredProducts.map((p) => {
-                  const totalStock = p.variants.reduce((sum, v) => sum + getVariantStock(v.id), 0);
+                  const totalStock = p.variants.reduce((sum, v) => sum + getVariantStock(v.id, activeWarehouseId), 0);
                   const minStock = p.variants.reduce((sum, v) => sum + v.minStock, 0);
                   const isLow = totalStock <= minStock;
                   const expanded = isProductExpanded(p.id);
@@ -815,7 +817,7 @@ export const CatalogPage: React.FC = () => {
                       {/* Billz-Style Per-Size & Color Variant Sub-Rows */}
                       {expanded &&
                         p.variants.map((v) => {
-                          const vStock = getVariantStock(v.id);
+                          const vStock = getVariantStock(v.id, activeWarehouseId);
                           const vLow = vStock <= v.minStock;
                           const matchedSearch =
                             search &&
@@ -1022,22 +1024,26 @@ export const CatalogPage: React.FC = () => {
                       onClick={async () => {
                         const clean = inlineNewCatName.trim();
                         if (!clean) return;
-                        const nowIso = new Date().toISOString();
-                        const newCatId = uid('cat');
-                        await upsertCategory({
-                          id: newCatId,
-                          nameUz: clean,
-                          nameRu: clean,
-                          sortOrder: db.categories.length + 1,
-                          storeId: editingProduct.storeId,
-                          createdAt: nowIso,
-                          updatedAt: nowIso,
-                          createdBy: 'usr-owner',
-                        });
-                        setEditingProduct({ ...editingProduct, categoryId: newCatId });
-                        setInlineNewCatName('');
-                        setInlineNewCatOpen(false);
-                        notify(`"${clean}" kategoriyasi yaratildi`, 'success');
+                        try {
+                          const nowIso = new Date().toISOString();
+                          const newCatId = uid('cat');
+                          await upsertCategory({
+                            id: newCatId,
+                            nameUz: clean,
+                            nameRu: clean,
+                            sortOrder: db.categories.length + 1,
+                            storeId: editingProduct.storeId,
+                            createdAt: nowIso,
+                            updatedAt: nowIso,
+                            createdBy: currentUser?.id ?? 'usr-owner',
+                          });
+                          setEditingProduct({ ...editingProduct, categoryId: newCatId });
+                          setInlineNewCatName('');
+                          setInlineNewCatOpen(false);
+                          notify(`"${clean}" kategoriyasi yaratildi`, 'success');
+                        } catch (err) {
+                          notify(err instanceof Error ? err.message : "Kategoriya yaratib bo'lmadi", 'error');
+                        }
                       }}
                       className="h-8 px-3 rounded-lg bg-blue-600 text-white text-xs font-semibold"
                     >
@@ -1047,7 +1053,16 @@ export const CatalogPage: React.FC = () => {
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1">{t.catalog.brands}</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">{t.catalog.brands}</label>
+                  <button
+                    type="button"
+                    onClick={() => setQuickAdd({ kind: 'brand' })}
+                    className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    + Yangi
+                  </button>
+                </div>
                 <select
                   value={editingProduct.brandId ?? ''}
                   onChange={(e) => setEditingProduct({ ...editingProduct, brandId: e.target.value || undefined })}
@@ -1056,6 +1071,55 @@ export const CatalogPage: React.FC = () => {
                   <option value="">—</option>
                   {db.brands.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">Filial</label>
+                  <button
+                    type="button"
+                    onClick={() => setQuickAdd({ kind: 'store' })}
+                    className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    + Yangi
+                  </button>
+                </div>
+                <select
+                  value={editingProduct.storeId}
+                  onChange={(e) =>
+                    setEditingProduct({
+                      ...editingProduct,
+                      storeId: e.target.value,
+                      variants: editingProduct.variants.map((vr) => ({ ...vr, storeId: e.target.value })),
+                    })
+                  }
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm"
+                >
+                  {db.stores.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">Yetkazib beruvchi</label>
+                  <button
+                    type="button"
+                    onClick={() => setQuickAdd({ kind: 'supplier' })}
+                    className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    + Yangi
+                  </button>
+                </div>
+                <select
+                  value={editingProduct.supplierId ?? ''}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, supplierId: e.target.value || undefined })}
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm"
+                >
+                  <option value="">—</option>
+                  {db.suppliers.map((sup) => (
+                    <option key={sup.id} value={sup.id}>{sup.name}</option>
                   ))}
                 </select>
               </div>
@@ -1105,11 +1169,20 @@ export const CatalogPage: React.FC = () => {
 
               {/* Step 1: Select 1 Color */}
               <div className="space-y-1.5">
-                <div className="font-semibold text-slate-700 dark:text-slate-200">
-                  1-qadam: Rangni tanlang (1 ta rang)
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-slate-700 dark:text-slate-200">
+                    1-qadam: Rangni tanlang (1 ta rang)
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setQuickAdd({ kind: 'color' })}
+                    className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    + Yangi rang
+                  </button>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {PRESET_COLORS.map((col) => {
+                  {availableColors.map((col) => {
                     const isSelected = activeBuilderColor.trim().toLowerCase() === col.toLowerCase();
                     const existingForColor = editingProduct.variants.filter(
                       (v) => (v.color || '').trim().toLowerCase() === col.toLowerCase()
@@ -1153,11 +1226,20 @@ export const CatalogPage: React.FC = () => {
 
               {/* Step 2: Select Sizes available in that Color */}
               <div className="space-y-2">
-                <div className="font-semibold text-slate-700 dark:text-slate-200">
-                  2-qadam: <span className="text-blue-700 dark:text-blue-400">"{activeBuilderColor || 'Tanlangan rang'}"</span> rangida bor razmerlarni belgilang
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-slate-700 dark:text-slate-200">
+                    2-qadam: <span className="text-blue-700 dark:text-blue-400">"{activeBuilderColor || 'Tanlangan rang'}"</span> rangida bor razmerlarni belgilang
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setQuickAdd({ kind: 'size' })}
+                    className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    + Yangi o'lcham
+                  </button>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {PRESET_SIZES.map((sz) => {
+                  {availableSizes.map((sz) => {
                     const active = sz in colorSizeDrafts;
                     return (
                       <button
@@ -1339,7 +1421,7 @@ export const CatalogPage: React.FC = () => {
                         storeId: editingProduct.storeId,
                         createdAt: nowIso,
                         updatedAt: nowIso,
-                        createdBy: 'usr-owner',
+                        createdBy: actorId,
                       };
                       setEditingProduct({ ...editingProduct, variants: [...editingProduct.variants, v] });
                     }}
@@ -1353,7 +1435,7 @@ export const CatalogPage: React.FC = () => {
 
               <div className="space-y-3">
                 {editingProduct.variants.map((v, idx) => {
-                  const curStock = getVariantStock(v.id);
+                  const curStock = getVariantStock(v.id, getWarehouseForStore(editingProduct.storeId));
                   return (
                     <div
                       key={v.id}
@@ -1593,7 +1675,7 @@ export const CatalogPage: React.FC = () => {
               >
                 {quickStockTarget.product.variants.map((v) => (
                   <option key={v.id} value={v.id}>
-                    {[v.size, v.color, v.sku].filter(Boolean).join(' · ')} (Qoldiq: {getVariantStock(v.id)})
+                    {[v.size, v.color, v.sku].filter(Boolean).join(' · ')} (Qoldiq: {getVariantStock(v.id, getWarehouseForStore(quickStockTarget.product.storeId))})
                   </option>
                 ))}
               </select>
@@ -1611,10 +1693,14 @@ export const CatalogPage: React.FC = () => {
             <button
               type="button"
               onClick={async () => {
-                const whId = getWarehouseForStore();
-                await quickAddStock(quickStockTarget.product.id, quickStockTarget.variantId, whId, quickStockTarget.qty);
-                notify("Ombor qoldig'i yangilandi", 'success');
-                setQuickStockTarget(null);
+                try {
+                  const whId = getWarehouseForStore(quickStockTarget.product.storeId);
+                  await quickAddStock(quickStockTarget.product.id, quickStockTarget.variantId, whId, quickStockTarget.qty);
+                  notify("Ombor qoldig'i yangilandi", 'success');
+                  setQuickStockTarget(null);
+                } catch (err) {
+                  notify(err instanceof Error ? err.message : 'Xatolik', 'error');
+                }
               }}
               className="w-full h-10 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold"
             >
@@ -1643,9 +1729,13 @@ export const CatalogPage: React.FC = () => {
               <button
                 type="button"
                 onClick={async () => {
-                  await deleteProduct(deleteConfirmProduct.id);
-                  notify("Mahsulot o'chirildi", 'info');
-                  setDeleteConfirmProduct(null);
+                  try {
+                    await deleteProduct(deleteConfirmProduct.id);
+                    notify("Mahsulot o'chirildi", 'info');
+                    setDeleteConfirmProduct(null);
+                  } catch (err) {
+                    notify(err instanceof Error ? err.message : "O'chirishda xatolik", 'error');
+                  }
                 }}
                 className="h-9 px-4 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"
               >
@@ -1692,10 +1782,14 @@ export const CatalogPage: React.FC = () => {
             <button
               type="button"
               onClick={async () => {
-                await bulkUpdatePrices(selectedIds, bulkPercent, bulkField);
-                notify('Narxlar ommaviy yangilandi', 'success');
-                setBulkModalOpen(false);
-                setSelectedIds([]);
+                try {
+                  await bulkUpdatePrices(selectedIds, bulkPercent, bulkField);
+                  notify('Narxlar ommaviy yangilandi', 'success');
+                  setBulkModalOpen(false);
+                  setSelectedIds([]);
+                } catch (err) {
+                  notify(err instanceof Error ? err.message : 'Xatolik', 'error');
+                }
               }}
               className="w-full h-10 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold"
             >
@@ -1823,10 +1917,10 @@ export const CatalogPage: React.FC = () => {
                   nameUz: clean,
                   nameRu: clean,
                   sortOrder: db.categories.length + 1,
-                  storeId: activeStoreId !== 'all' ? activeStoreId : db.stores[0]?.id ?? 'store-chilonzor',
+                  storeId: 'all',
                   createdAt: nowIso,
                   updatedAt: nowIso,
-                  createdBy: 'usr-owner',
+                  createdBy: actorId,
                 });
                 if (editingProduct) {
                   setEditingProduct({ ...editingProduct, categoryId: newId });
@@ -1954,6 +2048,31 @@ export const CatalogPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <QuickAddModal
+        open={Boolean(quickAdd)}
+        kind={quickAdd?.kind ?? null}
+        storeId={editingProduct?.storeId}
+        onClose={() => setQuickAdd(null)}
+        onCreated={(created) => {
+          if (!editingProduct || !quickAdd) return;
+          if (quickAdd.kind === 'brand') {
+            setEditingProduct({ ...editingProduct, brandId: created.id });
+          } else if (quickAdd.kind === 'supplier') {
+            setEditingProduct({ ...editingProduct, supplierId: created.id });
+          } else if (quickAdd.kind === 'store') {
+            setEditingProduct({
+              ...editingProduct,
+              storeId: created.id,
+              variants: editingProduct.variants.map((vr) => ({ ...vr, storeId: created.id })),
+            });
+          } else if (quickAdd.kind === 'color') {
+            setActiveBuilderColor(created.label);
+          } else if (quickAdd.kind === 'size') {
+            setColorSizeDrafts((prev) => ({ ...prev, [created.label]: prev[created.label] ?? 1 }));
+          }
+        }}
+      />
     </div>
   );
 };

@@ -17,8 +17,8 @@ import {
   X,
   Save,
 } from 'lucide-react';
-import { useAppStore, uid } from '../store/useAppStore';
-import { useT } from '../i18n';
+import { BackupSummary, useAppStore, uid } from '../store/useAppStore';
+import { formatDateTime, useT } from '../i18n';
 import { repository } from '../data/repository';
 import { AppSettings, Permission, PaymentMethod, Role, RoleId, Store } from '../types/models';
 
@@ -37,6 +37,10 @@ export const SettingsPage: React.FC = () => {
   const upsertRole = useAppStore((s) => s.upsertRole);
   const deleteRole = useAppStore((s) => s.deleteRole);
   const updateUserCredentials = useAppStore((s) => s.updateUserCredentials);
+  const restoreDeletedRecord = useAppStore((s) => s.restoreDeletedRecord);
+  const listServerBackups = useAppStore((s) => s.listServerBackups);
+  const createServerBackup = useAppStore((s) => s.createServerBackup);
+  const restoreServerBackup = useAppStore((s) => s.restoreServerBackup);
   const resetDemoData = useAppStore((s) => s.resetDemoData);
   const clearAllTestData = useAppStore((s) => s.clearAllTestData);
   const importBackupJson = useAppStore((s) => s.importBackupJson);
@@ -44,6 +48,8 @@ export const SettingsPage: React.FC = () => {
   const t = useT();
 
   const [tab, setTab] = useState<'general' | 'stores' | 'security' | 'receipts' | 'roles' | 'integrations' | 'backup' | 'plan'>('general');
+  const [serverBackups, setServerBackups] = useState<BackupSummary[]>([]);
+  const [loadingBackups, setLoadingBackups] = useState(false);
 
   // Stores state
   const [newStoreName, setNewStoreName] = useState('');
@@ -79,13 +85,24 @@ export const SettingsPage: React.FC = () => {
     if (db) {
       setIntegDraft(structuredClone(db.settings.integrations));
       if (!selectedUserId && db.users[0]) {
-        setSelectedUserId(db.users[0].id);
-      }
-      if (currentUser && !newPin) {
-        setNewPin(currentUser.pin);
+        const selectable =
+          currentUser?.roleId === 'owner'
+            ? db.users[0]
+            : db.users.find((u) => u.roleId !== 'owner') ?? db.users[0];
+        if (selectable) setSelectedUserId(selectable.id);
       }
     }
-  }, [db, currentUser, selectedUserId, newPin]);
+  }, [db, currentUser, selectedUserId]);
+
+  useEffect(() => {
+    if (tab === 'backup') {
+      setLoadingBackups(true);
+      listServerBackups()
+        .then((list) => setServerBackups(list))
+        .catch(() => {})
+        .finally(() => setLoadingBackups(false));
+    }
+  }, [tab, listServerBackups]);
 
   if (!db) return null;
 
@@ -508,25 +525,25 @@ export const SettingsPage: React.FC = () => {
               <select
                 value={selectedUserId}
                 onChange={(e) => {
-                  const uidVal = e.target.value;
-                  setSelectedUserId(uidVal);
-                  const found = db.users.find((u) => u.id === uidVal);
-                  setStaffNewPin(found?.pin ?? '');
+                  setSelectedUserId(e.target.value);
+                  setStaffNewPin('');
                   setStaffNewPass('');
                 }}
                 className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950"
               >
-                {db.users.map((u) => {
-                  const roleObj = db.roles.find((r) => r.id === u.roleId);
-                  const roleLabel = roleObj
-                    ? (language === 'ru' ? roleObj.nameRu : roleObj.nameUz)
-                    : t.auth.roles[u.roleId as keyof typeof t.auth.roles] ?? u.roleId;
-                  return (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({roleLabel}) — PIN: {u.pin}
-                    </option>
-                  );
-                })}
+                {db.users
+                  .filter((u) => currentUser?.roleId === 'owner' || u.roleId !== 'owner')
+                  .map((u) => {
+                    const roleObj = db.roles.find((r) => r.id === u.roleId);
+                    const roleLabel = roleObj
+                      ? (language === 'ru' ? roleObj.nameRu : roleObj.nameUz)
+                      : t.auth.roles[u.roleId as keyof typeof t.auth.roles] ?? u.roleId;
+                    return (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({roleLabel}) · {u.phone}
+                      </option>
+                    );
+                  })}
               </select>
             </div>
             <div>
@@ -963,14 +980,30 @@ export const SettingsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Backup, Demo Restore & Clear All Test Data */}
+      {/* Backup, Server Snapshots & Soft-Delete Recovery */}
       {tab === 'backup' && (
-        <div className="space-y-4 max-w-xl text-xs">
+        <div className="space-y-4 max-w-3xl text-xs">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
             <p className="text-slate-500">
-              Barcha ma'lumotlar qurilmangizda (IndexedDB) saqlanadi. Istalgan vaqtda JSON zaxira nusxasini yuklab olishingiz yoki demo ma'lumotlarni tiklashingiz mumkin.
+              Barcha ma'lumotlar markaziy server bazasida saqlanadi va barcha qurilmalarda real vaqtda sinxronlanadi. Istalgan vaqtda JSON yoki server zaxira nusxasini yaratib, tiklashingiz mumkin.
             </p>
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const created = await createServerBackup("Qo'lda zaxira");
+                    setServerBackups((prev) => [created, ...prev]);
+                    notify('Serverda zaxira nusxa yaratildi', 'success');
+                  } catch (err) {
+                    notify(err instanceof Error ? err.message : 'Xatolik yuz berdi', 'error');
+                  }
+                }}
+                className="h-10 px-4 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold inline-flex items-center gap-1.5"
+              >
+                <Save className="w-4 h-4" />
+                <span>Serverda zaxira olish</span>
+              </button>
               <button
                 type="button"
                 onClick={handleDownloadBackup}
@@ -988,14 +1021,111 @@ export const SettingsPage: React.FC = () => {
                 type="button"
                 onClick={async () => {
                   await resetDemoData();
-                  notify("Demo ma'lumotlar qayta tiklandi", 'info');
+                  notify("Boshlang'ich filial ma'lumotlari tiklandi", 'info');
                 }}
                 className="h-10 px-4 rounded-lg border border-slate-300 dark:border-slate-700 font-semibold inline-flex items-center gap-1.5"
               >
                 <RotateCcw className="w-4 h-4" />
-                <span>Demo bazani tiklash</span>
+                <span>Standart bazani tiklash</span>
               </button>
             </div>
+          </div>
+
+          {/* Server Rolling Backups */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="font-display font-bold text-sm">Server zaxira nusxalari ({serverBackups.length})</div>
+              <button
+                type="button"
+                onClick={async () => {
+                  setLoadingBackups(true);
+                  try {
+                    setServerBackups(await listServerBackups());
+                  } finally {
+                    setLoadingBackups(false);
+                  }
+                }}
+                className="h-8 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 inline-flex items-center gap-1"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingBackups ? 'animate-spin' : ''}`} />
+                <span>Yangilash</span>
+              </button>
+            </div>
+            {serverBackups.length === 0 ? (
+              <p className="text-slate-400">Hozircha zaxira nusxalar ro'yxati bo'sh</p>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-56 overflow-y-auto">
+                {serverBackups.map((bk) => (
+                  <div key={bk.id} className="py-2.5 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-900 dark:text-white truncate">
+                        {bk.label} <span className="font-mono text-slate-400">(rev #{bk.revision})</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 font-mono">
+                        {formatDateTime(bk.createdAt, language)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await restoreServerBackup(bk.id);
+                          notify('Server zaxira nusxasi muvaffaqiyatli tiklandi', 'success');
+                        } catch (err) {
+                          notify(err instanceof Error ? err.message : 'Tiklashda xatolik', 'error');
+                        }
+                      }}
+                      className="h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-teal-50 dark:hover:bg-teal-950 text-teal-700 dark:text-teal-300 font-semibold shrink-0"
+                    >
+                      Tiklash
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Soft-Deleted Records Recovery */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3">
+            <div className="font-display font-bold text-sm">
+              O'chirilgan ma'lumotlarni tiklash ({(db.deletedRecords ?? []).length})
+            </div>
+            {(db.deletedRecords ?? []).length === 0 ? (
+              <p className="text-slate-400">O'chirilgan yozuvlar mavjud emas</p>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-60 overflow-y-auto">
+                {(db.deletedRecords ?? []).map((rec) => (
+                  <div key={rec.id} className="py-2.5 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px] uppercase">
+                          {rec.entityType}
+                        </span>
+                        <span className="font-semibold text-slate-900 dark:text-white truncate">{rec.label}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {rec.deletedByName} · {formatDateTime(rec.deletedAt, language)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await restoreDeletedRecord(rec.id);
+                          notify(`"${rec.label}" muvaffaqiyatli tiklandi`, 'success');
+                        } catch (err) {
+                          notify(err instanceof Error ? err.message : 'Tiklashda xatolik', 'error');
+                        }
+                      }}
+                      className="h-8 px-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 font-semibold shrink-0 inline-flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Tiklash</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="bg-red-50/70 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-5 space-y-3">

@@ -10,14 +10,25 @@ import {
 } from 'lucide-react';
 import { useAppStore, uid } from '../store/useAppStore';
 import { formatDate, formatDateTime, formatMoney, useT } from '../i18n';
-import { Customer, CustomerSegment, Debt, PaymentMethod, PromoCode } from '../types/models';
-import { exportToCsv } from '../utils/export';
+import { Customer, CustomerSegment, Debt, LoyaltyTier, PaymentMethod, PromoCode } from '../types/models';
+import { exportToCsv, exportToPdf } from '../utils/export';
 import { notificationProvider } from '../integrations/interfaces';
+import { QuickAddModal } from '../components/QuickAddModal';
+
+const TIER_UZ: Record<LoyaltyTier, string> = {
+  bronze: 'Bronza',
+  silver: 'Kumush',
+  gold: 'Oltin',
+  platinum: 'Platina',
+};
 
 export const CustomersPage: React.FC = () => {
   const db = useAppStore((s) => s.db);
   const language = useAppStore((s) => s.language);
   const activeStoreId = useAppStore((s) => s.activeStoreId);
+  const currentUser = useAppStore((s) => s.getCurrentUser());
+  const can = useAppStore((s) => s.can);
+  const canAccessStore = useAppStore((s) => s.canAccessStore);
   const upsertCustomer = useAppStore((s) => s.upsertCustomer);
   const repayDebt = useAppStore((s) => s.repayDebt);
   const upsertPromoCode = useAppStore((s) => s.upsertPromoCode);
@@ -32,6 +43,8 @@ export const CustomersPage: React.FC = () => {
   const [cPhone, setCPhone] = useState('+99890');
   const [cBirthday, setCBirthday] = useState('');
   const [cNotes, setCNotes] = useState('');
+  const [cStoreId, setCStoreId] = useState('');
+  const [quickStoreOpen, setQuickStoreOpen] = useState(false);
 
   // Debt repayment modal
   const [repayTarget, setRepayTarget] = useState<Debt | null>(null);
@@ -48,9 +61,18 @@ export const CustomersPage: React.FC = () => {
   const [promoCodeVal, setPromoCodeVal] = useState('');
   const [promoDiscountVal, setPromoDiscountVal] = useState(10);
 
+  const allowedStores = useMemo(() => {
+    if (!db) return [];
+    return db.stores.filter((st) => canAccessStore(st.id));
+  }, [db, canAccessStore]);
+
   const filtered = useMemo(() => {
     if (!db) return [];
     return db.customers.filter((c) => {
+      if (c.storeId && c.storeId !== 'all') {
+        if (activeStoreId !== 'all' && c.storeId !== activeStoreId) return false;
+        if (!canAccessStore(c.storeId)) return false;
+      }
       if (segment === 'debt' && c.debtBalance <= 0) return false;
       if (segment !== 'all' && segment !== 'debt' && c.segment !== segment) return false;
       if (search) {
@@ -59,34 +81,45 @@ export const CustomersPage: React.FC = () => {
       }
       return true;
     });
-  }, [db, segment, search]);
+  }, [db, segment, search, activeStoreId, canAccessStore]);
 
   if (!db) return null;
 
   const handleSaveCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!cName.trim()) return;
+    if (!cName.trim()) {
+      notify('Mijoz ismini kiriting', 'error');
+      return;
+    }
+    const targetStoreId =
+      cStoreId || (activeStoreId !== 'all' ? activeStoreId : allowedStores[0]?.id || db.stores[0]?.id || '');
     const nowIso = new Date().toISOString();
-    await upsertCustomer({
-      id: uid('cust'),
-      name: cName.trim(),
-      phone: cPhone.trim(),
-      birthday: cBirthday || undefined,
-      notes: cNotes || undefined,
-      tags: [],
-      segment: 'new',
-      totalSpent: 0,
-      ordersCount: 0,
-      debtBalance: 0,
-      storeId: activeStoreId !== 'all' ? activeStoreId : db.stores[0].id,
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      createdBy: 'usr-cashier',
-    });
-    notify("Mijoz qo'shildi", 'success');
-    setNewCustomerOpen(false);
-    setCName('');
-    setCPhone('+99890');
+    try {
+      await upsertCustomer({
+        id: uid('cust'),
+        name: cName.trim(),
+        phone: cPhone.trim(),
+        birthday: cBirthday || undefined,
+        notes: cNotes.trim() || undefined,
+        tags: [],
+        segment: 'new',
+        totalSpent: 0,
+        ordersCount: 0,
+        debtBalance: 0,
+        storeId: targetStoreId,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        createdBy: currentUser?.id ?? 'usr-owner',
+      });
+      notify("Mijoz qo'shildi", 'success');
+      setNewCustomerOpen(false);
+      setCName('');
+      setCPhone('+99890');
+      setCBirthday('');
+      setCNotes('');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Mijozni saqlashda xatolik", 'error');
+    }
   };
 
   return (
@@ -117,7 +150,13 @@ export const CustomersPage: React.FC = () => {
               type="button"
               onClick={() =>
                 exportToCsv(
-                  filtered.map((c) => ({ Ism: c.name, Telefon: c.phone, Segment: c.segment, JamiXarid: c.totalSpent })),
+                  filtered.map((c) => ({
+                    Ism: c.name,
+                    Telefon: c.phone,
+                    Segment: t.customers.segments[c.segment],
+                    JamiXarid: c.totalSpent,
+                    Qarz: c.debtBalance,
+                  })),
                   'mijozlar-bazasi'
                 )
               }
@@ -125,6 +164,27 @@ export const CustomersPage: React.FC = () => {
             >
               <Download className="w-3.5 h-3.5" />
               <span>CSV</span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                exportToPdf(
+                  "Mijozlar ro'yxati",
+                  ['Mijoz', 'Telefon', 'Segment', 'Jami xarid', 'Qarz'],
+                  filtered.map((c) => [
+                    c.name,
+                    c.phone,
+                    t.customers.segments[c.segment],
+                    formatMoney(c.totalSpent, { lang: language }),
+                    formatMoney(c.debtBalance, { lang: language }),
+                  ]),
+                  'mijozlar-bazasi'
+                )
+              }
+              className="h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium inline-flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>PDF</span>
             </button>
             <button
               type="button"
@@ -136,7 +196,10 @@ export const CustomersPage: React.FC = () => {
             </button>
             <button
               type="button"
-              onClick={() => setNewCustomerOpen(true)}
+              onClick={() => {
+                setCStoreId(activeStoreId !== 'all' ? activeStoreId : allowedStores[0]?.id ?? db.stores[0]?.id ?? '');
+                setNewCustomerOpen(true);
+              }}
               className="h-10 px-4 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-xs font-semibold inline-flex items-center gap-1.5"
             >
               <UserPlus className="w-4 h-4" />
@@ -192,7 +255,7 @@ export const CustomersPage: React.FC = () => {
                     <div className="text-[11px] font-mono text-slate-500">{c.phone}</div>
                   </td>
                   <td className="py-3 px-3 text-slate-600 dark:text-slate-300">
-                    {t.customers.segments[c.segment]} · {loy ? `${loy.tier.toUpperCase()} (${loy.cashbackPercent}%)` : '—'}
+                    {t.customers.segments[c.segment]} · {loy ? `${TIER_UZ[loy.tier]} (${loy.cashbackPercent}%)` : '—'}
                   </td>
                   <td className="py-3 px-3 text-right font-mono tabular-nums font-semibold">
                     {formatMoney(c.totalSpent, { lang: language })}
@@ -233,8 +296,17 @@ export const CustomersPage: React.FC = () => {
 
             {(() => {
               const loy = db.loyaltyAccounts.find((l) => l.customerId === selectedCustomer.id);
-              const custDebts = db.debts.filter((d) => d.customerId === selectedCustomer.id && d.remainingAmount > 0);
-              const custSales = db.sales.filter((s) => s.customerId === selectedCustomer.id);
+              const custDebts = db.debts.filter(
+                (d) =>
+                  d.customerId === selectedCustomer.id &&
+                  d.remainingAmount > 0 &&
+                  (activeStoreId === 'all' || d.storeId === activeStoreId)
+              );
+              const custSales = db.sales.filter(
+                (s) =>
+                  s.customerId === selectedCustomer.id &&
+                  (activeStoreId === 'all' || s.storeId === activeStoreId)
+              );
 
               return (
                 <div className="space-y-4">
@@ -333,19 +405,29 @@ export const CustomersPage: React.FC = () => {
               onChange={(e) => setRepayMethod(e.target.value as PaymentMethod)}
               className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs"
             >
-              <option value="cash">Naqd</option>
-              <option value="uzcard">Uzcard</option>
-              <option value="humo">Humo</option>
+              <option value="cash">Naqd pul</option>
+              <option value="uzcard">UzCard</option>
+              <option value="humo">HUMO</option>
               <option value="click">Click</option>
               <option value="payme">Payme</option>
+              <option value="uzum">Uzum</option>
+              <option value="transfer">Bank o'tkazmasi</option>
             </select>
             <button
               type="button"
               onClick={async () => {
-                await repayDebt(repayTarget.id, repayAmount, repayMethod);
-                notify("Qarz to'lovi qabul qilindi", 'success');
-                setRepayTarget(null);
-                setSelectedCustomer(null);
+                if (!repayAmount || repayAmount <= 0) {
+                  notify("To'lov summasini kiriting", 'error');
+                  return;
+                }
+                try {
+                  await repayDebt(repayTarget.id, repayAmount, repayMethod);
+                  notify("Qarz to'lovi qabul qilindi", 'success');
+                  setRepayTarget(null);
+                  setSelectedCustomer(null);
+                } catch (err) {
+                  notify(err instanceof Error ? err.message : "Qarz to'lovida xatolik", 'error');
+                }
               }}
               className="w-full h-10 rounded-lg bg-teal-700 text-white text-xs font-semibold"
             >
@@ -365,6 +447,29 @@ export const CustomersPage: React.FC = () => {
             </div>
             <input required value={cName} onChange={(e) => setCName(e.target.value)} placeholder="Ism familiya" className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs" />
             <input required value={cPhone} onChange={(e) => setCPhone(e.target.value)} placeholder="Telefon" className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono" />
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-slate-500">
+                <span>Filial</span>
+                {can('manage_settings') && (
+                  <button
+                    type="button"
+                    onClick={() => setQuickStoreOpen(true)}
+                    className="text-teal-700 dark:text-teal-400 font-semibold hover:underline"
+                  >
+                    + Yangi
+                  </button>
+                )}
+              </div>
+              <select
+                value={cStoreId}
+                onChange={(e) => setCStoreId(e.target.value)}
+                className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs"
+              >
+                {allowedStores.map((st) => (
+                  <option key={st.id} value={st.id}>{st.name}</option>
+                ))}
+              </select>
+            </div>
             <input type="date" value={cBirthday} onChange={(e) => setCBirthday(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs" />
             <input value={cNotes} onChange={(e) => setCNotes(e.target.value)} placeholder="Izoh" className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs" />
             <button type="submit" className="w-full h-10 rounded-lg bg-teal-700 text-white text-xs font-semibold">{t.common.save}</button>
@@ -391,13 +496,17 @@ export const CustomersPage: React.FC = () => {
             <button
               type="button"
               onClick={async () => {
-                const res = await notificationProvider.sendBroadcast({
-                  channel: broadcastChannel,
-                  recipients: filtered.map((c) => ({ name: c.name, phone: c.phone })),
-                  message: broadcastMsg,
-                });
-                notify(res.note, 'info');
-                setBroadcastOpen(false);
+                try {
+                  const res = await notificationProvider.sendBroadcast({
+                    channel: broadcastChannel,
+                    recipients: filtered.map((c) => ({ name: c.name, phone: c.phone })),
+                    message: broadcastMsg,
+                  });
+                  notify(res.note, 'info');
+                  setBroadcastOpen(false);
+                } catch (err) {
+                  notify(err instanceof Error ? err.message : 'Xabarnoma yuborishda xatolik', 'error');
+                }
               }}
               className="w-full h-10 rounded-lg bg-teal-700 text-white text-xs font-semibold"
             >
@@ -417,11 +526,18 @@ export const CustomersPage: React.FC = () => {
             </div>
             <div className="flex gap-2">
               <input value={promoCodeVal} onChange={(e) => setPromoCodeVal(e.target.value.toUpperCase())} placeholder="KOD (mas. BAHOR15)" className="flex-1 h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono" />
-              <input type="number" value={promoDiscountVal} onChange={(e) => setPromoDiscountVal(Number(e.target.value))} className="w-16 h-9 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono" />
+              <input type="number" min={1} max={100} value={promoDiscountVal} onChange={(e) => setPromoDiscountVal(Number(e.target.value))} className="w-16 h-9 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono" />
               <button
                 type="button"
                 onClick={async () => {
-                  if (!promoCodeVal.trim()) return;
+                  if (!promoCodeVal.trim()) {
+                    notify('Promokod matnini kiriting', 'error');
+                    return;
+                  }
+                  if (!promoDiscountVal || promoDiscountVal <= 0) {
+                    notify("Chegirma foizi 0 dan katta bo'lishi kerak", 'error');
+                    return;
+                  }
                   const nowIso = new Date().toISOString();
                   const p: PromoCode = {
                     id: uid('promo'),
@@ -432,14 +548,18 @@ export const CustomersPage: React.FC = () => {
                     maxUses: 100,
                     usedCount: 0,
                     isActive: true,
-                    storeId: db.stores[0].id,
+                    storeId: activeStoreId !== 'all' ? activeStoreId : allowedStores[0]?.id ?? db.stores[0]?.id ?? 'all',
                     createdAt: nowIso,
                     updatedAt: nowIso,
-                    createdBy: 'usr-owner',
+                    createdBy: currentUser?.id ?? 'usr-owner',
                   };
-                  await upsertPromoCode(p);
-                  setPromoCodeVal('');
-                  notify('Promokod yaratildi', 'success');
+                  try {
+                    await upsertPromoCode(p);
+                    setPromoCodeVal('');
+                    notify('Promokod yaratildi', 'success');
+                  } catch (err) {
+                    notify(err instanceof Error ? err.message : 'Promokod yaratishda xatolik', 'error');
+                  }
                 }}
                 className="px-3 h-9 rounded-lg bg-teal-700 text-white text-xs font-semibold"
               >
@@ -457,6 +577,13 @@ export const CustomersPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <QuickAddModal
+        open={quickStoreOpen}
+        kind="store"
+        onClose={() => setQuickStoreOpen(false)}
+        onCreated={({ id }) => setCStoreId(id)}
+      />
     </div>
   );
 };

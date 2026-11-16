@@ -58,10 +58,14 @@ export interface Warehouse extends BaseEntity {
 export interface User extends BaseEntity {
   name: string;
   phone: string;
+  login?: string;
   password: string;
   pin: string;
+  position?: string;
   roleId: RoleId;
+  primaryStoreId?: string;
   assignedStoreIds: string[];
+  sellStoreIds?: string[];
   customPermissions?: Permission[];
   isActive: boolean;
   avatarColor?: string;
@@ -118,7 +122,7 @@ export interface Supplier extends BaseEntity {
   phone: string;
   address?: string;
   notes?: string;
-  debtBalance: number; // positive = we owe supplier
+  debtBalance: number;
 }
 
 export interface StockItem extends BaseEntity {
@@ -194,10 +198,18 @@ export interface TransferItem {
 
 export interface Transfer extends BaseEntity {
   number: string;
+  fromStoreId?: string;
+  toStoreId?: string;
   fromWarehouseId: string;
   toWarehouseId: string;
   items: TransferItem[];
-  status: 'sent' | 'received' | 'discrepancy';
+  status: 'sent' | 'received' | 'discrepancy' | 'rejected';
+  initiatedByName?: string;
+  receivedBy?: string;
+  receivedByName?: string;
+  receivedAt?: string;
+  rejectedAt?: string;
+  rejectedReason?: string;
   note?: string;
 }
 
@@ -273,7 +285,7 @@ export interface SaleItem {
   qty: number;
   unitPrice: number;
   purchasePrice: number;
-  discountAmount: number; // total discount on this line
+  discountAmount: number;
   discountPercent: number;
   lineTotal: number;
 }
@@ -468,7 +480,12 @@ export interface Employee extends BaseEntity {
   userId: string;
   name: string;
   phone: string;
+  login?: string;
+  position?: string;
   roleId: RoleId;
+  primaryStoreId?: string;
+  assignedStoreIds?: string[];
+  sellStoreIds?: string[];
   baseSalary: number;
   commissionPercent: number;
   schedule: string;
@@ -476,8 +493,8 @@ export interface Employee extends BaseEntity {
 }
 
 export interface Target extends BaseEntity {
-  employeeId?: string; // undefined = store-wide target
-  month: string; // YYYY-MM
+  employeeId?: string;
+  month: string;
   targetAmount: number;
 }
 
@@ -508,27 +525,53 @@ export interface AuditLog extends BaseEntity {
   userId: string;
   userName: string;
   action:
-    | 'price_change'
+    | 'product_create'
+    | 'product_edit'
     | 'product_delete'
+    | 'price_change'
+    | 'purchase_receipt'
+    | 'sale_create'
     | 'sale_return'
     | 'big_discount'
     | 'stock_writeoff'
     | 'stocktake_apply'
+    | 'transfer_create'
+    | 'transfer_receive'
+    | 'transfer_reject'
+    | 'expense_create'
     | 'shift_close'
     | 'settings_change'
-    | 'debt_repay';
+    | 'debt_repay'
+    | 'employee_change'
+    | 'entity_restore'
+    | 'backup_restore';
   entityType: string;
   entityId: string;
   summary: string;
   details?: string;
 }
 
+export interface DeletedRecord {
+  id: string;
+  entityType: 'Product' | 'Customer' | 'Store' | 'Employee' | 'Sale' | 'Category';
+  entityId: string;
+  label: string;
+  storeId: string;
+  deletedAt: string;
+  deletedBy: string;
+  deletedByName: string;
+  data: unknown;
+}
+
 export interface OfflineSyncItem {
   id: string;
-  type: 'sale' | 'return' | 'cash_op';
+  type: 'op' | 'sale' | 'return' | 'cash_op';
+  operationId?: string;
+  opType?: string;
   payload: unknown;
   createdAt: string;
   attempts: number;
+  error?: string;
 }
 
 export interface AppSettings {
@@ -584,12 +627,15 @@ export interface AppSettings {
 
 export interface DatabaseSnapshot {
   version: number;
+  revision?: number;
   stores: Store[];
   warehouses: Warehouse[];
   users: User[];
   roles: Role[];
   categories: Category[];
   brands: Brand[];
+  customSizes?: string[];
+  customColors?: string[];
   products: Product[];
   suppliers: Supplier[];
   stockItems: StockItem[];
@@ -615,6 +661,7 @@ export interface DatabaseSnapshot {
   targets: Target[];
   onlineOrders: OnlineOrder[];
   auditLogs: AuditLog[];
+  deletedRecords?: DeletedRecord[];
   offlineQueue: OfflineSyncItem[];
   settings: AppSettings;
 }

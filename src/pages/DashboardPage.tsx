@@ -17,9 +17,9 @@ import { formatMoney, formatShortMoney, useT } from '../i18n';
 export const DashboardPage: React.FC = () => {
   const db = useAppStore((s) => s.db);
   const can = useAppStore((s) => s.can);
+  const canAccessStore = useAppStore((s) => s.canAccessStore);
   const activeStoreId = useAppStore((s) => s.activeStoreId);
   const language = useAppStore((s) => s.language);
-  const getVariantStock = useAppStore((s) => s.getVariantStock);
   const setShowOnboarding = useAppStore((s) => s.setShowOnboarding);
   const t = useT();
   const navigate = useNavigate();
@@ -50,6 +50,7 @@ export const DashboardPage: React.FC = () => {
       (s) =>
         s.status !== 'returned' &&
         s.status !== 'deferred' &&
+        canAccessStore(s.storeId) &&
         (activeStoreId === 'all' || s.storeId === activeStoreId)
     );
 
@@ -108,21 +109,30 @@ export const DashboardPage: React.FC = () => {
     });
     const topCashiers = [...cashierMap.values()].sort((a, b) => b.total - a.total).slice(0, 4);
 
-    // Low stock alerts
+    // Low stock alerts scoped by activeStoreId warehouses
+    const scopedWarehouseIds = db.warehouses
+      .filter((w) => canAccessStore(w.storeId) && (activeStoreId === 'all' || w.storeId === activeStoreId))
+      .map((w) => w.id);
+    const scopedWarehouseSet = new Set(scopedWarehouseIds);
+
     const lowStock: { productName: string; variantLabel: string; qty: number; min: number }[] = [];
-    db.products.forEach((p) =>
-      p.variants.forEach((v) => {
-        const q = getVariantStock(v.id);
-        if (q <= v.minStock) {
-          lowStock.push({
-            productName: p.name,
-            variantLabel: [v.size, v.color].filter(Boolean).join(' / ') || v.sku,
-            qty: q,
-            min: v.minStock,
-          });
-        }
-      })
-    );
+    db.products
+      .filter((p) => !p.storeId || p.storeId === 'all' || activeStoreId === 'all' || p.storeId === activeStoreId)
+      .forEach((p) =>
+        p.variants.forEach((v) => {
+          const q = db.stockItems
+            .filter((st) => st.variantId === v.id && scopedWarehouseSet.has(st.warehouseId))
+            .reduce((sum, st) => sum + st.qty, 0);
+          if (q <= v.minStock) {
+            lowStock.push({
+              productName: p.name,
+              variantLabel: [v.size, v.color].filter(Boolean).join(' / ') || v.sku,
+              qty: q,
+              min: v.minStock,
+            });
+          }
+        })
+      );
 
     return {
       revenue,
@@ -139,13 +149,25 @@ export const DashboardPage: React.FC = () => {
       lowStock: lowStock.slice(0, 6),
       lowStockTotalCount: lowStock.length,
     };
-  }, [db, period, activeStoreId, getVariantStock]);
+  }, [db, period, activeStoreId, canAccessStore]);
 
   if (!db || !analytics) return null;
 
-  const cashBalanceTotal = db.accounts.reduce((s, a) => s + a.balance, 0);
-  const customerDebts = db.debts.reduce((s, d) => s + d.remainingAmount, 0);
-  const supplierDebts = db.suppliers.reduce((s, sup) => s + sup.debtBalance, 0);
+  const scopedAccounts = db.accounts.filter(
+    (a) => canAccessStore(a.storeId) && (activeStoreId === 'all' || a.storeId === activeStoreId)
+  );
+  const cashBalanceTotal = scopedAccounts.reduce((s, a) => s + a.balance, 0);
+  const customerDebts = db.debts
+    .filter((d) => canAccessStore(d.storeId) && (activeStoreId === 'all' || d.storeId === activeStoreId))
+    .reduce((s, d) => s + d.remainingAmount, 0);
+  const supplierDebts = db.suppliers
+    .filter(
+      (sup) =>
+        !sup.storeId ||
+        sup.storeId === 'all' ||
+        (canAccessStore(sup.storeId) && (activeStoreId === 'all' || sup.storeId === activeStoreId))
+    )
+    .reduce((s, sup) => s + sup.debtBalance, 0);
   const showUsd = db.settings.showUsdOption;
   const usdRate = db.settings.usdRate;
 
@@ -295,12 +317,17 @@ export const DashboardPage: React.FC = () => {
                 {formatShortMoney(cashBalanceTotal, language)}
               </div>
               <div className="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800 text-xs">
-                {db.accounts.map((a) => (
-                  <div key={a.id} className="flex justify-between">
-                    <span className="text-slate-500 truncate">{a.name}</span>
-                    <span className="font-mono tabular-nums font-medium">{formatMoney(a.balance, { lang: language })}</span>
-                  </div>
-                ))}
+                {scopedAccounts.map((a) => {
+                  const st = db.stores.find((s) => s.id === a.storeId);
+                  return (
+                    <div key={a.id} className="flex justify-between gap-2">
+                      <span className="text-slate-500 truncate">
+                        {a.name}{activeStoreId === 'all' && st ? ` (${st.name})` : ''}
+                      </span>
+                      <span className="font-mono tabular-nums font-medium shrink-0">{formatMoney(a.balance, { lang: language })}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

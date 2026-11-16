@@ -13,17 +13,71 @@ import {
   Download,
   X,
   Check,
+  XCircle,
 } from 'lucide-react';
 import { useAppStore, uid } from '../store/useAppStore';
 import { formatDate, formatDateTime, formatMoney, useT } from '../i18n';
-import { Product, PurchaseReceiptItem, StocktakeItem, TransferItem, Variant, WriteOffItem, WriteOffReason } from '../types/models';
+import {
+  Product,
+  PurchaseReceiptItem,
+  StockMovementType,
+  StocktakeItem,
+  TransferItem,
+  Variant,
+  WriteOffItem,
+  WriteOffReason,
+} from '../types/models';
 import { exportToExcel } from '../utils/export';
+import { QuickAddKind, QuickAddModal } from '../components/QuickAddModal';
 
 type InvTab = 'stock' | 'receiving' | 'transfers' | 'writeoffs' | 'stocktake' | 'movements' | 'suppliers';
+
+const PAYMENT_STATUS_UZ: Record<string, string> = {
+  paid: "To'langan",
+  partial: "Qisman to'langan",
+  debt: 'Nasiya (qarz)',
+};
+
+const TRANSFER_STATUS_UZ: Record<string, string> = {
+  sent: "Yo'lda (yuborilgan)",
+  received: 'Qabul qilindi',
+  discrepancy: 'Farq bilan qabul qilindi',
+  rejected: 'Rad etildi',
+};
+
+const WRITEOFF_REASON_UZ: Record<WriteOffReason, string> = {
+  damaged: 'Shikastlangan / Yaroqsiz',
+  expired: "Muddati o'tgan",
+  lost: "Yo'qolgan / Kamomad",
+  other: 'Boshqa',
+};
+
+const MOVEMENT_TYPE_UZ: Record<StockMovementType, string> = {
+  kirim: 'Kirim',
+  sotuv: 'Sotuv',
+  qaytarish: 'Qaytarish',
+  kochirish_out: "Ko'chirish (chiqim)",
+  kochirish_in: "Ko'chirish (kirim)",
+  chiqim: 'Hisobdan chiqarish',
+  inventarizatsiya: 'Inventarizatsiya',
+  online_sotuv: 'Onlayn sotuv',
+};
+
+const PO_STATUS_UZ: Record<string, string> = {
+  draft: 'Qoralama',
+  ordered: 'Buyurtma berilgan',
+  received: 'Qabul qilingan',
+  canceled: 'Bekor qilingan',
+};
 
 export const InventoryPage: React.FC = () => {
   const db = useAppStore((s) => s.db);
   const can = useAppStore((s) => s.can);
+  const canAccessStore = useAppStore((s) => s.canAccessStore);
+  const currentUser = useAppStore((s) => s.getCurrentUser());
+  const activeStoreId = useAppStore((s) => s.activeStoreId);
+  const branchDirectory = useAppStore((s) => s.branchDirectory);
+  const getWarehouseForStore = useAppStore((s) => s.getWarehouseForStore);
   const language = useAppStore((s) => s.language);
   const getVariantStock = useAppStore((s) => s.getVariantStock);
   const createPurchaseReceipt = useAppStore((s) => s.createPurchaseReceipt);
@@ -31,6 +85,7 @@ export const InventoryPage: React.FC = () => {
   const updatePurchaseOrderStatus = useAppStore((s) => s.updatePurchaseOrderStatus);
   const createTransfer = useAppStore((s) => s.createTransfer);
   const receiveTransfer = useAppStore((s) => s.receiveTransfer);
+  const rejectTransfer = useAppStore((s) => s.rejectTransfer);
   const createWriteOff = useAppStore((s) => s.createWriteOff);
   const saveStocktake = useAppStore((s) => s.saveStocktake);
   const applyStocktake = useAppStore((s) => s.applyStocktake);
@@ -51,9 +106,20 @@ export const InventoryPage: React.FC = () => {
       setTab(qTab);
     }
   }, [searchParams]);
+
   const [warehouseFilter, setWarehouseFilter] = useState('all');
+  useEffect(() => {
+    if (activeStoreId === 'all') {
+      setWarehouseFilter('all');
+    } else {
+      const whId = getWarehouseForStore(activeStoreId);
+      setWarehouseFilter(whId || 'all');
+    }
+  }, [activeStoreId, getWarehouseForStore]);
+
   const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'dead'>('all');
   const [search, setSearch] = useState('');
+  const [quickAdd, setQuickAdd] = useState<{ kind: QuickAddKind; target?: 'rec' | 'po' } | null>(null);
 
   // Receiving modal
   const [recOpen, setRecOpen] = useState(false);
@@ -65,13 +131,15 @@ export const InventoryPage: React.FC = () => {
   const [recItems, setRecItems] = useState<PurchaseReceiptItem[]>([]);
   const [recPaid, setRecPaid] = useState(0);
 
-  // Transfer modal
+  // Transfer modal & reject modal
   const [trfOpen, setTrfOpen] = useState(false);
   const [trfFrom, setTrfFrom] = useState('');
   const [trfTo, setTrfTo] = useState('');
   const [trfVariantId, setTrfVariantId] = useState('');
   const [trfQty, setTrfQty] = useState(5);
   const [trfItems, setTrfItems] = useState<TransferItem[]>([]);
+  const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   // Write-off modal
   const [woOpen, setWoOpen] = useState(false);
@@ -98,6 +166,119 @@ export const InventoryPage: React.FC = () => {
   const [poVariantId, setPoVariantId] = useState('');
   const [poQty, setPoQty] = useState(15);
 
+  const scopedWarehouses = useMemo(() => {
+    if (!db) return [];
+    return activeStoreId === 'all'
+      ? db.warehouses
+      : db.warehouses.filter((w) => w.storeId === activeStoreId);
+  }, [db, activeStoreId]);
+
+  const transferDestinations = useMemo(() => {
+    if (!db) return [];
+    const seen = new Set<string>();
+    const list: { warehouseId: string; storeId: string; label: string }[] = [];
+    db.warehouses.forEach((w) => {
+      if (!seen.has(w.id)) {
+        seen.add(w.id);
+        const stName = db.stores.find((s) => s.id === w.storeId)?.name;
+        list.push({
+          warehouseId: w.id,
+          storeId: w.storeId,
+          label: stName ? `${stName} — ${w.name}` : w.name,
+        });
+      }
+    });
+    branchDirectory.forEach((b) => {
+      if (b.warehouseId && !seen.has(b.warehouseId)) {
+        seen.add(b.warehouseId);
+        list.push({
+          warehouseId: b.warehouseId,
+          storeId: b.id,
+          label: `${b.name} — ${b.warehouseName}`,
+        });
+      }
+    });
+    return list;
+  }, [db, branchDirectory]);
+
+  const resolveWarehouseName = (whId: string) => {
+    const wh = db?.warehouses.find((w) => w.id === whId);
+    if (wh) return wh.name;
+    const br = branchDirectory.find((b) => b.warehouseId === whId);
+    if (br) return `${br.name} (${br.warehouseName})`;
+    return whId;
+  };
+
+  const scopedProducts = useMemo(() => {
+    if (!db) return [];
+    return activeStoreId === 'all'
+      ? db.products
+      : db.products.filter((p) => p.storeId === activeStoreId);
+  }, [db, activeStoreId]);
+
+  const scopedSuppliers = useMemo(() => {
+    if (!db) return [];
+    return activeStoreId === 'all'
+      ? db.suppliers
+      : db.suppliers.filter((s) => !s.storeId || s.storeId === 'all' || s.storeId === activeStoreId);
+  }, [db, activeStoreId]);
+
+  const scopedPurchaseReceipts = useMemo(() => {
+    if (!db) return [];
+    return activeStoreId === 'all'
+      ? db.purchaseReceipts
+      : db.purchaseReceipts.filter((pr) => pr.storeId === activeStoreId);
+  }, [db, activeStoreId]);
+
+  const scopedTransfers = useMemo(() => {
+    if (!db) return [];
+    if (activeStoreId === 'all') return db.transfers;
+    const whIds = new Set(scopedWarehouses.map((w) => w.id));
+    return db.transfers.filter(
+      (tr) =>
+        tr.storeId === activeStoreId ||
+        tr.fromStoreId === activeStoreId ||
+        tr.toStoreId === activeStoreId ||
+        whIds.has(tr.fromWarehouseId) ||
+        whIds.has(tr.toWarehouseId)
+    );
+  }, [db, activeStoreId, scopedWarehouses]);
+
+  const scopedWriteOffs = useMemo(() => {
+    if (!db) return [];
+    return activeStoreId === 'all'
+      ? db.writeOffs
+      : db.writeOffs.filter((wo) => wo.storeId === activeStoreId);
+  }, [db, activeStoreId]);
+
+  const scopedStocktakes = useMemo(() => {
+    if (!db) return [];
+    return activeStoreId === 'all'
+      ? db.stocktakes
+      : db.stocktakes.filter((st) => st.storeId === activeStoreId);
+  }, [db, activeStoreId]);
+
+  const scopedMovements = useMemo(() => {
+    if (!db) return [];
+    return activeStoreId === 'all'
+      ? db.stockMovements
+      : db.stockMovements.filter((m) => m.storeId === activeStoreId);
+  }, [db, activeStoreId]);
+
+  const scopedPurchaseOrders = useMemo(() => {
+    if (!db) return [];
+    return activeStoreId === 'all'
+      ? db.purchaseOrders
+      : db.purchaseOrders.filter((po) => po.storeId === activeStoreId);
+  }, [db, activeStoreId]);
+
+  const scopedAccounts = useMemo(() => {
+    if (!db) return [];
+    return activeStoreId === 'all'
+      ? db.accounts
+      : db.accounts.filter((a) => a.storeId === activeStoreId);
+  }, [db, activeStoreId]);
+
   const variantLookup = useMemo(() => {
     const map = new Map<string, { product: Product; variant: Variant }>();
     if (!db) return map;
@@ -111,12 +292,17 @@ export const InventoryPage: React.FC = () => {
     const cutoff = Date.now() - 30 * 86400000;
     const map = new Map<string, number>();
     db.sales.forEach((s) => {
-      if (s.status !== 'deferred' && s.status !== 'returned' && new Date(s.createdAt).getTime() >= cutoff) {
+      if (
+        (activeStoreId === 'all' || s.storeId === activeStoreId) &&
+        s.status !== 'deferred' &&
+        s.status !== 'returned' &&
+        new Date(s.createdAt).getTime() >= cutoff
+      ) {
         s.items.forEach((it) => map.set(it.variantId, (map.get(it.variantId) ?? 0) + it.qty));
       }
     });
     return map;
-  }, [db]);
+  }, [db, activeStoreId]);
 
   const stockRows = useMemo(() => {
     if (!db) return [];
@@ -128,7 +314,7 @@ export const InventoryPage: React.FC = () => {
       reorderQty: number;
     }[] = [];
 
-    db.products.forEach((p) => {
+    scopedProducts.forEach((p) => {
       p.variants.forEach((v) => {
         const qty =
           warehouseFilter === 'all' ? getVariantStock(v.id) : getVariantStock(v.id, warehouseFilter);
@@ -153,14 +339,17 @@ export const InventoryPage: React.FC = () => {
       });
     });
     return rows;
-  }, [db, warehouseFilter, stockFilter, search, getVariantStock, velocityMap]);
+  }, [db, scopedProducts, warehouseFilter, stockFilter, search, getVariantStock, velocityMap]);
 
   if (!db) return null;
 
+  const defaultStoreId =
+    activeStoreId !== 'all' ? activeStoreId : scopedWarehouses[0]?.storeId ?? db.stores[0]?.id ?? '';
+
   const initReceivingModal = () => {
-    const firstVar = db.products[0]?.variants[0];
-    setRecSupplierId(db.suppliers[0]?.id ?? '');
-    setRecWarehouseId(db.warehouses[0]?.id ?? '');
+    const firstVar = scopedProducts[0]?.variants[0];
+    setRecSupplierId(scopedSuppliers[0]?.id ?? db.suppliers[0]?.id ?? '');
+    setRecWarehouseId(scopedWarehouses[0]?.id ?? db.warehouses[0]?.id ?? '');
     setRecVariantId(firstVar?.id ?? '');
     setRecPrice(firstVar?.purchasePrice ?? 100000);
     setRecQty(10);
@@ -188,8 +377,10 @@ export const InventoryPage: React.FC = () => {
   };
 
   const startNewStocktake = (whId: string) => {
+    const wh = db.warehouses.find((w) => w.id === whId);
+    const productsForWh = wh ? db.products.filter((p) => p.storeId === wh.storeId) : scopedProducts;
     const list: StocktakeItem[] = [];
-    db.products.forEach((p) => {
+    productsForWh.forEach((p) => {
       p.variants.forEach((v) => {
         const sysQty = getVariantStock(v.id, whId);
         list.push({
@@ -281,7 +472,7 @@ export const InventoryPage: React.FC = () => {
                 className="h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-medium"
               >
                 <option value="all">Barcha omborlar</option>
-                {db.warehouses.map((w) => (
+                {scopedWarehouses.map((w) => (
                   <option key={w.id} value={w.id}>{w.name}</option>
                 ))}
               </select>
@@ -401,26 +592,29 @@ export const InventoryPage: React.FC = () => {
             )}
           </div>
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
-            {db.purchaseReceipts.map((pr) => {
-              const sup = db.suppliers.find((s) => s.id === pr.supplierId);
-              const wh = db.warehouses.find((w) => w.id === pr.warehouseId);
-              return (
-                <div key={pr.id} className="p-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-bold font-mono">{pr.number} · {sup?.name}</div>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      {wh?.name} · {pr.items.length} pozitsiya · {formatDateTime(pr.createdAt, language)}
+            {scopedPurchaseReceipts.length === 0 ? (
+              <div className="py-10 text-center text-xs text-slate-400">Hozircha kirim hujjatlari yo'q</div>
+            ) : (
+              scopedPurchaseReceipts.map((pr) => {
+                const sup = db.suppliers.find((s) => s.id === pr.supplierId);
+                return (
+                  <div key={pr.id} className="p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-bold font-mono">{pr.number} · {sup?.name ?? "Ta'minotchi"}</div>
+                      <div className="text-xs text-slate-500 mt-0.5">
+                        {resolveWarehouseName(pr.warehouseId)} · {pr.items.length} pozitsiya · {formatDateTime(pr.createdAt, language)}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-mono font-bold text-sm">{formatMoney(pr.totalAmount, { lang: language })}</div>
+                      <div className="text-xs text-slate-500">
+                        To'landi: {formatMoney(pr.paidAmount, { lang: language })} · {PAYMENT_STATUS_UZ[pr.paymentStatus] ?? pr.paymentStatus}
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="font-mono font-bold text-sm">{formatMoney(pr.totalAmount, { lang: language })}</div>
-                    <div className="text-xs text-slate-500">
-                      To'landi: {formatMoney(pr.paidAmount, { lang: language })} · {pr.paymentStatus}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
       )}
@@ -434,9 +628,11 @@ export const InventoryPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setTrfFrom(db.warehouses[0]?.id ?? '');
-                  setTrfTo(db.warehouses[1]?.id ?? db.warehouses[0]?.id ?? '');
-                  setTrfVariantId(db.products[0]?.variants[0]?.id ?? '');
+                  const defaultFrom = scopedWarehouses[0]?.id ?? db.warehouses[0]?.id ?? '';
+                  const firstOther = transferDestinations.find((d) => d.warehouseId !== defaultFrom)?.warehouseId ?? defaultFrom;
+                  setTrfFrom(defaultFrom);
+                  setTrfTo(firstOther);
+                  setTrfVariantId(scopedProducts[0]?.variants[0]?.id ?? db.products[0]?.variants[0]?.id ?? '');
                   setTrfItems([]);
                   setTrfOpen(true);
                 }}
@@ -448,34 +644,64 @@ export const InventoryPage: React.FC = () => {
             )}
           </div>
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
-            {db.transfers.length === 0 ? (
+            {scopedTransfers.length === 0 ? (
               <div className="py-10 text-center text-xs text-slate-400">Hozircha ko'chirishlar yo'q</div>
             ) : (
-              db.transfers.map((tr) => {
-                const fromW = db.warehouses.find((w) => w.id === tr.fromWarehouseId)?.name;
-                const toW = db.warehouses.find((w) => w.id === tr.toWarehouseId)?.name;
+              scopedTransfers.map((tr) => {
+                const fromW = resolveWarehouseName(tr.fromWarehouseId);
+                const toW = resolveWarehouseName(tr.toWarehouseId);
+                const toStoreId = tr.toStoreId ?? db.warehouses.find((w) => w.id === tr.toWarehouseId)?.storeId ?? '';
+                const fromStoreId = tr.fromStoreId ?? db.warehouses.find((w) => w.id === tr.fromWarehouseId)?.storeId ?? '';
+                const canReceive = !toStoreId || canAccessStore(toStoreId);
+                const canReject = canReceive || (!fromStoreId || canAccessStore(fromStoreId));
+
                 return (
                   <div key={tr.id} className="p-4 flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <div className="text-sm font-bold font-mono">{tr.number} · {fromW} → {toW}</div>
                       <div className="text-xs text-slate-500">
-                        {tr.items.length} ta pozitsiya · {tr.status} · {formatDateTime(tr.createdAt, language)}
+                        {tr.items.length} ta pozitsiya · {TRANSFER_STATUS_UZ[tr.status] ?? tr.status} · {formatDateTime(tr.createdAt, language)}
                       </div>
+                      {tr.rejectedReason && (
+                        <div className="text-xs text-red-600 mt-0.5">Rad etish sababi: {tr.rejectedReason}</div>
+                      )}
                     </div>
                     {tr.status === 'sent' && canManage && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          await receiveTransfer(
-                            tr.id,
-                            tr.items.map((it) => ({ variantId: it.variantId, receivedQty: it.sentQty }))
-                          );
-                          notify("Ko'chirish qabul qilindi", 'success');
-                        }}
-                        className="px-3 py-2 rounded-lg bg-teal-700 text-white text-xs font-semibold"
-                      >
-                        Qabul qilish
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {canReceive && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await receiveTransfer(
+                                  tr.id,
+                                  tr.items.map((it) => ({ variantId: it.variantId, receivedQty: it.sentQty }))
+                                );
+                                notify("Ko'chirish qabul qilindi", 'success');
+                              } catch (err) {
+                                notify(err instanceof Error ? err.message : "Qabul qilishda xatolik", 'error');
+                              }
+                            }}
+                            className="px-3 py-2 rounded-lg bg-teal-700 text-white text-xs font-semibold inline-flex items-center gap-1"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Qabul qilish</span>
+                          </button>
+                        )}
+                        {canReject && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRejectTargetId(tr.id);
+                              setRejectReason('');
+                            }}
+                            className="px-3 py-2 rounded-lg border border-red-200 dark:border-red-900 text-red-600 text-xs font-semibold inline-flex items-center gap-1 hover:bg-red-50 dark:hover:bg-red-950/30"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            <span>Rad etish</span>
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 );
@@ -494,9 +720,10 @@ export const InventoryPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  setWoWarehouse(db.warehouses[0]?.id ?? '');
-                  setWoVariantId(db.products[0]?.variants[0]?.id ?? '');
+                  setWoWarehouse(scopedWarehouses[0]?.id ?? db.warehouses[0]?.id ?? '');
+                  setWoVariantId(scopedProducts[0]?.variants[0]?.id ?? db.products[0]?.variants[0]?.id ?? '');
                   setWoQty(1);
+                  setWoNote('');
                   setWoOpen(true);
                 }}
                 className="h-10 px-4 rounded-xl bg-red-600 text-white text-xs font-semibold inline-flex items-center gap-1.5"
@@ -507,14 +734,18 @@ export const InventoryPage: React.FC = () => {
             )}
           </div>
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
-            {db.writeOffs.length === 0 ? (
+            {scopedWriteOffs.length === 0 ? (
               <div className="py-10 text-center text-xs text-slate-400">Hisobdan chiqarish hujjatlari yo'q</div>
             ) : (
-              db.writeOffs.map((wo) => (
+              scopedWriteOffs.map((wo) => (
                 <div key={wo.id} className="p-4 flex items-center justify-between">
                   <div>
-                    <div className="text-sm font-bold font-mono">{wo.number} · {wo.reason}</div>
-                    <div className="text-xs text-slate-500">{wo.note || formatDateTime(wo.createdAt, language)}</div>
+                    <div className="text-sm font-bold font-mono">
+                      {wo.number} · {WRITEOFF_REASON_UZ[wo.reason] ?? wo.reason}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {resolveWarehouseName(wo.warehouseId)} · {wo.note || formatDateTime(wo.createdAt, language)}
+                    </div>
                   </div>
                   <div className="font-mono font-bold text-red-600 text-sm">
                     -{formatMoney(wo.totalCost, { lang: language })}
@@ -532,17 +763,17 @@ export const InventoryPage: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <select
-                value={activeStocktakeWh || db.warehouses[0]?.id}
+                value={activeStocktakeWh || scopedWarehouses[0]?.id || db.warehouses[0]?.id}
                 onChange={(e) => setActiveStocktakeWh(e.target.value)}
                 className="h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-medium"
               >
-                {db.warehouses.map((w) => (
+                {scopedWarehouses.map((w) => (
                   <option key={w.id} value={w.id}>{w.name}</option>
                 ))}
               </select>
               <button
                 type="button"
-                onClick={() => startNewStocktake(activeStocktakeWh || db.warehouses[0]?.id || '')}
+                onClick={() => startNewStocktake(activeStocktakeWh || scopedWarehouses[0]?.id || db.warehouses[0]?.id || '')}
                 className="h-10 px-4 rounded-lg bg-teal-700 text-white text-xs font-semibold"
               >
                 {t.inventory.startStocktake}
@@ -566,22 +797,26 @@ export const InventoryPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={async () => {
-                    const wh = db.warehouses.find((w) => w.id === activeStocktakeWh);
-                    const discrepancyVal = stocktakeItems.reduce(
-                      (s, it) => s + (it.countedQty - it.systemQty) * it.unitCost,
-                      0
-                    );
-                    const st = await saveStocktake({
-                      number: `INV-${String(db.stocktakes.length + 1).padStart(3, '0')}`,
-                      warehouseId: activeStocktakeWh,
-                      status: 'in_progress',
-                      items: stocktakeItems,
-                      totalDiscrepancyValue: discrepancyVal,
-                      storeId: wh?.storeId ?? db.stores[0].id,
-                    });
-                    await applyStocktake(st.id);
-                    setStocktakeItems([]);
-                    notify('Inventarizatsiya tasdiqlandi va qoldiqlar tuzatildi', 'success');
+                    try {
+                      const wh = db.warehouses.find((w) => w.id === activeStocktakeWh);
+                      const discrepancyVal = stocktakeItems.reduce(
+                        (s, it) => s + (it.countedQty - it.systemQty) * it.unitCost,
+                        0
+                      );
+                      const st = await saveStocktake({
+                        number: `INV-${String(db.stocktakes.length + 1).padStart(3, '0')}`,
+                        warehouseId: activeStocktakeWh,
+                        status: 'in_progress',
+                        items: stocktakeItems,
+                        totalDiscrepancyValue: discrepancyVal,
+                        storeId: wh?.storeId ?? defaultStoreId,
+                      });
+                      await applyStocktake(st.id);
+                      setStocktakeItems([]);
+                      notify('Inventarizatsiya tasdiqlandi va qoldiqlar tuzatildi', 'success');
+                    } catch (err) {
+                      notify(err instanceof Error ? err.message : 'Inventarizatsiyada xatolik', 'error');
+                    }
                   }}
                   className="h-10 px-4 rounded-lg bg-emerald-600 text-white text-xs font-semibold inline-flex items-center gap-1.5"
                 >
@@ -636,13 +871,17 @@ export const InventoryPage: React.FC = () => {
             </div>
           )}
 
-          {db.stocktakes.length > 0 && (
+          {scopedStocktakes.length > 0 && (
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
-              {db.stocktakes.map((st) => (
+              {scopedStocktakes.map((st) => (
                 <div key={st.id} className="p-3.5 flex items-center justify-between text-xs">
                   <div>
-                    <div className="font-bold font-mono">{st.number} · {st.status}</div>
-                    <div className="text-slate-500">{formatDateTime(st.createdAt, language)}</div>
+                    <div className="font-bold font-mono">
+                      {st.number} · {st.status === 'completed' ? 'Tasdiqlangan' : 'Jarayonda'}
+                    </div>
+                    <div className="text-slate-500">
+                      {resolveWarehouseName(st.warehouseId)} · {formatDateTime(st.createdAt, language)}
+                    </div>
                   </div>
                   <div className="font-mono font-bold">
                     Farq qiymati: {formatMoney(st.totalDiscrepancyValue, { lang: language })}
@@ -670,15 +909,14 @@ export const InventoryPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {db.stockMovements.slice(0, 80).map((m) => {
+              {scopedMovements.slice(0, 80).map((m) => {
                 const found = variantLookup.get(m.variantId);
-                const wh = db.warehouses.find((w) => w.id === m.warehouseId);
                 return (
                   <tr key={m.id}>
                     <td className="py-2 px-3 font-mono text-slate-500 whitespace-nowrap">{formatDateTime(m.createdAt, language)}</td>
-                    <td className="py-2 px-3 font-semibold uppercase">{m.type}</td>
+                    <td className="py-2 px-3 font-semibold">{MOVEMENT_TYPE_UZ[m.type] ?? m.type}</td>
                     <td className="py-2 px-3">{found?.product.name ?? m.productId}</td>
-                    <td className="py-2 px-3 text-slate-500">{wh?.name}</td>
+                    <td className="py-2 px-3 text-slate-500">{resolveWarehouseName(m.warehouseId)}</td>
                     <td className={`py-2 px-3 text-right font-mono font-bold ${m.qtyDelta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                       {m.qtyDelta >= 0 ? `+${m.qtyDelta}` : m.qtyDelta}
                     </td>
@@ -710,8 +948,8 @@ export const InventoryPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      setPoSupplierId(db.suppliers[0]?.id ?? '');
-                      setPoVariantId(db.products[0]?.variants[0]?.id ?? '');
+                      setPoSupplierId(scopedSuppliers[0]?.id ?? db.suppliers[0]?.id ?? '');
+                      setPoVariantId(scopedProducts[0]?.variants[0]?.id ?? db.products[0]?.variants[0]?.id ?? '');
                       setPoOpen(true);
                     }}
                     className="h-9 px-3 rounded-lg bg-teal-700 text-white text-xs font-semibold"
@@ -724,7 +962,7 @@ export const InventoryPage: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {db.suppliers.map((sup) => (
+            {scopedSuppliers.map((sup) => (
               <div key={sup.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-bold">{sup.name}</div>
@@ -739,8 +977,17 @@ export const InventoryPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={async () => {
-                        await paySupplierDebt(sup.id, sup.debtBalance, db.accounts[0]?.id ?? 'acc-cash-1');
-                        notify("Ta'minotchi qarzi to'landi", 'success');
+                        try {
+                          const acc = scopedAccounts.find((a) => a.type === 'cash') ?? scopedAccounts[0] ?? db.accounts[0];
+                          if (!acc) {
+                            notify('To\'lov uchun hisob topilmadi', 'error');
+                            return;
+                          }
+                          await paySupplierDebt(sup.id, sup.debtBalance, acc.id);
+                          notify("Ta'minotchi qarzi to'landi", 'success');
+                        } catch (err) {
+                          notify(err instanceof Error ? err.message : "To'lovda xatolik", 'error');
+                        }
                       }}
                       className="px-2.5 py-1 rounded bg-slate-900 dark:bg-slate-700 text-white text-[11px] font-medium"
                     >
@@ -753,30 +1000,43 @@ export const InventoryPage: React.FC = () => {
           </div>
 
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
-            <div className="px-4 py-3 font-semibold text-xs text-slate-500">Buyurtmalar (Purchase Orders)</div>
-            {db.purchaseOrders.map((po) => {
-              const sup = db.suppliers.find((s) => s.id === po.supplierId);
-              return (
-                <div key={po.id} className="p-4 flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div>
-                    <div className="font-bold font-mono">{po.number} · {sup?.name}</div>
-                    <div className="text-slate-500">Kutilayotgan sana: {formatDate(po.expectedDate)} · {po.status}</div>
+            <div className="px-4 py-3 font-semibold text-xs text-slate-500">Yetkazib beruvchilarga buyurtmalar</div>
+            {scopedPurchaseOrders.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400">Hozircha buyurtmalar yo'q</div>
+            ) : (
+              scopedPurchaseOrders.map((po) => {
+                const sup = db.suppliers.find((s) => s.id === po.supplierId);
+                return (
+                  <div key={po.id} className="p-4 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div>
+                      <div className="font-bold font-mono">{po.number} · {sup?.name}</div>
+                      <div className="text-slate-500">
+                        Kutilayotgan sana: {formatDate(po.expectedDate)} · {PO_STATUS_UZ[po.status] ?? po.status}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold">{formatMoney(po.totalAmount, { lang: language })}</span>
+                      {po.status === 'ordered' && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await updatePurchaseOrderStatus(po.id, 'received');
+                              notify('Buyurtma qabul qilindi', 'success');
+                            } catch (err) {
+                              notify(err instanceof Error ? err.message : 'Xatolik yuz berdi', 'error');
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded bg-teal-700 text-white font-medium"
+                        >
+                          Qabul qilindi
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold">{formatMoney(po.totalAmount, { lang: language })}</span>
-                    {po.status === 'ordered' && (
-                      <button
-                        type="button"
-                        onClick={() => updatePurchaseOrderStatus(po.id, 'received')}
-                        className="px-2.5 py-1 rounded bg-teal-700 text-white font-medium"
-                      >
-                        Qabul qilindi
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
       )}
@@ -789,13 +1049,37 @@ export const InventoryPage: React.FC = () => {
               <h3 className="font-display text-base font-bold">{t.inventory.newReceiving}</h3>
               <button type="button" onClick={() => setRecOpen(false)}><X className="w-4 h-4" /></button>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <select value={recSupplierId} onChange={(e) => setRecSupplierId(e.target.value)} className="h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
-                {db.suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-              <select value={recWarehouseId} onChange={(e) => setRecWarehouseId(e.target.value)} className="h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
-                {db.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-medium text-slate-500">Yetkazib beruvchi</label>
+                  <button
+                    type="button"
+                    onClick={() => setQuickAdd({ kind: 'supplier', target: 'rec' })}
+                    className="text-[11px] font-semibold text-teal-700 dark:text-teal-400 hover:underline"
+                  >
+                    + Yangi
+                  </button>
+                </div>
+                <select value={recSupplierId} onChange={(e) => setRecSupplierId(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
+                  {scopedSuppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-medium text-slate-500">Ombor</label>
+                  <button
+                    type="button"
+                    onClick={() => setQuickAdd({ kind: 'warehouse', target: 'rec' })}
+                    className="text-[11px] font-semibold text-teal-700 dark:text-teal-400 hover:underline"
+                  >
+                    + Yangi
+                  </button>
+                </div>
+                <select value={recWarehouseId} onChange={(e) => setRecWarehouseId(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
+                  {scopedWarehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
               <select
@@ -807,7 +1091,7 @@ export const InventoryPage: React.FC = () => {
                 }}
                 className="sm:col-span-2 h-10 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs"
               >
-                {db.products.flatMap((p) =>
+                {scopedProducts.flatMap((p) =>
                   p.variants.map((v) => (
                     <option key={v.id} value={v.id}>{p.name} ({[v.size, v.color].filter(Boolean).join('/') || v.sku})</option>
                   ))
@@ -842,20 +1126,24 @@ export const InventoryPage: React.FC = () => {
               type="button"
               disabled={recItems.length === 0}
               onClick={async () => {
-                const totalAmount = recItems.reduce((s, i) => s + i.total, 0);
-                const wh = db.warehouses.find((w) => w.id === recWarehouseId);
-                await createPurchaseReceipt({
-                  number: `KIR-${String(db.purchaseReceipts.length + 19).padStart(3, '0')}`,
-                  supplierId: recSupplierId,
-                  warehouseId: recWarehouseId,
-                  items: recItems,
-                  totalAmount,
-                  paidAmount: recPaid,
-                  paymentStatus: recPaid >= totalAmount ? 'paid' : recPaid > 0 ? 'partial' : 'debt',
-                  storeId: wh?.storeId ?? db.stores[0].id,
-                });
-                notify('Kirim hujjati saqlandi', 'success');
-                setRecOpen(false);
+                try {
+                  const totalAmount = recItems.reduce((s, i) => s + i.total, 0);
+                  const wh = db.warehouses.find((w) => w.id === recWarehouseId);
+                  await createPurchaseReceipt({
+                    number: `KIR-${String(db.purchaseReceipts.length + 1).padStart(3, '0')}`,
+                    supplierId: recSupplierId,
+                    warehouseId: recWarehouseId,
+                    items: recItems,
+                    totalAmount,
+                    paidAmount: recPaid,
+                    paymentStatus: recPaid >= totalAmount ? 'paid' : recPaid > 0 ? 'partial' : 'debt',
+                    storeId: wh?.storeId ?? defaultStoreId,
+                  });
+                  notify('Kirim hujjati saqlandi', 'success');
+                  setRecOpen(false);
+                } catch (err) {
+                  notify(err instanceof Error ? err.message : 'Kirim saqlashda xatolik', 'error');
+                }
               }}
               className="w-full h-11 rounded-xl bg-teal-700 text-white text-xs font-semibold disabled:opacity-40"
             >
@@ -873,24 +1161,26 @@ export const InventoryPage: React.FC = () => {
               <h3 className="font-display text-base font-bold">{t.inventory.newTransfer}</h3>
               <button type="button" onClick={() => setTrfOpen(false)}><X className="w-4 h-4" /></button>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <select value={trfFrom} onChange={(e) => setTrfFrom(e.target.value)} className="h-10 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
-                {db.warehouses.map((w) => <option key={w.id} value={w.id}>Qayerdan: {w.name}</option>)}
+                {scopedWarehouses.map((w) => <option key={w.id} value={w.id}>Qayerdan: {w.name}</option>)}
               </select>
               <select value={trfTo} onChange={(e) => setTrfTo(e.target.value)} className="h-10 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
-                {db.warehouses.map((w) => <option key={w.id} value={w.id}>Qayerga: {w.name}</option>)}
+                {transferDestinations.map((dest) => (
+                  <option key={dest.warehouseId} value={dest.warehouseId}>Qayerga: {dest.label}</option>
+                ))}
               </select>
             </div>
             <div className="flex gap-2">
               <select value={trfVariantId} onChange={(e) => setTrfVariantId(e.target.value)} className="flex-1 h-10 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
-                {db.products.flatMap((p) => p.variants.map((v) => <option key={v.id} value={v.id}>{p.name} ({v.sku})</option>))}
+                {scopedProducts.flatMap((p) => p.variants.map((v) => <option key={v.id} value={v.id}>{p.name} ({v.sku})</option>))}
               </select>
               <input type="number" min={1} value={trfQty} onChange={(e) => setTrfQty(Number(e.target.value))} className="w-20 h-10 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono" />
               <button
                 type="button"
                 onClick={() => {
                   const found = variantLookup.get(trfVariantId);
-                  if (!found) return;
+                  if (!found || trfQty <= 0) return;
                   setTrfItems([...trfItems, { productId: found.product.id, variantId: found.variant.id, productName: found.product.name, variantLabel: found.variant.sku, sentQty: trfQty, receivedQty: 0 }]);
                 }}
                 className="px-3 h-10 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-xs font-semibold"
@@ -908,21 +1198,70 @@ export const InventoryPage: React.FC = () => {
               type="button"
               disabled={trfItems.length === 0 || trfFrom === trfTo}
               onClick={async () => {
-                const wh = db.warehouses.find((w) => w.id === trfFrom);
-                await createTransfer({
-                  number: `TRF-${String(db.transfers.length + 1).padStart(3, '0')}`,
-                  fromWarehouseId: trfFrom,
-                  toWarehouseId: trfTo,
-                  items: trfItems,
-                  storeId: wh?.storeId ?? db.stores[0].id,
-                });
-                notify("Ko'chirish yuborildi", 'success');
-                setTrfOpen(false);
+                try {
+                  const wh = db.warehouses.find((w) => w.id === trfFrom);
+                  await createTransfer({
+                    number: `KOC-${String(db.transfers.length + 1).padStart(3, '0')}`,
+                    fromWarehouseId: trfFrom,
+                    toWarehouseId: trfTo,
+                    items: trfItems,
+                    storeId: wh?.storeId ?? defaultStoreId,
+                  });
+                  notify("Ko'chirish yuborildi", 'success');
+                  setTrfOpen(false);
+                } catch (err) {
+                  notify(err instanceof Error ? err.message : "Ko'chirish yuborishda xatolik", 'error');
+                }
               }}
               className="w-full h-11 rounded-xl bg-teal-700 text-white text-xs font-semibold disabled:opacity-40"
             >
               Yuborish
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Transfer Modal */}
+      {rejectTargetId && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-base font-bold">Ko'chirishni rad etish</h3>
+              <button type="button" onClick={() => setRejectTargetId(null)}><X className="w-4 h-4" /></button>
+            </div>
+            <p className="text-xs text-slate-500">
+              Ko'chirish rad etilganda tovarlar jo'natuvchi omborga qaytariladi.
+            </p>
+            <input
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Rad etish sababi (ixtiyoriy)"
+              className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectTargetId(null)}
+                className="h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-medium"
+              >
+                Bekor qilish
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await rejectTransfer(rejectTargetId, rejectReason.trim() || 'Qabul qilinmadi');
+                    notify("Ko'chirish rad etildi va qoldiq qaytarildi", 'info');
+                    setRejectTargetId(null);
+                  } catch (err) {
+                    notify(err instanceof Error ? err.message : 'Rad etishda xatolik', 'error');
+                  }
+                }}
+                className="h-9 px-4 rounded-lg bg-red-600 text-white text-xs font-semibold"
+              >
+                Rad etish
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -936,7 +1275,7 @@ export const InventoryPage: React.FC = () => {
               <button type="button" onClick={() => setWoOpen(false)}><X className="w-4 h-4" /></button>
             </div>
             <select value={woWarehouse} onChange={(e) => setWoWarehouse(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
-              {db.warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+              {scopedWarehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
             </select>
             <select value={woReason} onChange={(e) => setWoReason(e.target.value as WriteOffReason)} className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
               <option value="damaged">Shikastlangan / Yaroqsiz</option>
@@ -945,35 +1284,39 @@ export const InventoryPage: React.FC = () => {
               <option value="other">Boshqa</option>
             </select>
             <select value={woVariantId} onChange={(e) => setWoVariantId(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
-              {db.products.flatMap((p) => p.variants.map((v) => <option key={v.id} value={v.id}>{p.name} ({v.sku})</option>))}
+              {scopedProducts.flatMap((p) => p.variants.map((v) => <option key={v.id} value={v.id}>{p.name} ({v.sku})</option>))}
             </select>
             <input type="number" min={1} value={woQty} onChange={(e) => setWoQty(Number(e.target.value))} placeholder="Miqdori" className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono" />
             <input value={woNote} onChange={(e) => setWoNote(e.target.value)} placeholder="Izoh" className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs" />
             <button
               type="button"
               onClick={async () => {
-                const found = variantLookup.get(woVariantId);
-                if (!found) return;
-                const item: WriteOffItem = {
-                  productId: found.product.id,
-                  variantId: found.variant.id,
-                  productName: found.product.name,
-                  variantLabel: found.variant.sku,
-                  qty: woQty,
-                  unitCost: found.variant.purchasePrice,
-                };
-                const wh = db.warehouses.find((w) => w.id === woWarehouse);
-                await createWriteOff({
-                  number: `CHI-${String(db.writeOffs.length + 1).padStart(3, '0')}`,
-                  warehouseId: woWarehouse,
-                  reason: woReason,
-                  items: [item],
-                  totalCost: item.qty * item.unitCost,
-                  note: woNote,
-                  storeId: wh?.storeId ?? db.stores[0].id,
-                });
-                notify('Hisobdan chiqarildi', 'info');
-                setWoOpen(false);
+                try {
+                  const found = variantLookup.get(woVariantId);
+                  if (!found || woQty <= 0) return;
+                  const item: WriteOffItem = {
+                    productId: found.product.id,
+                    variantId: found.variant.id,
+                    productName: found.product.name,
+                    variantLabel: found.variant.sku,
+                    qty: woQty,
+                    unitCost: found.variant.purchasePrice,
+                  };
+                  const wh = db.warehouses.find((w) => w.id === woWarehouse);
+                  await createWriteOff({
+                    number: `CHI-${String(db.writeOffs.length + 1).padStart(3, '0')}`,
+                    warehouseId: woWarehouse,
+                    reason: woReason,
+                    items: [item],
+                    totalCost: item.qty * item.unitCost,
+                    note: woNote,
+                    storeId: wh?.storeId ?? defaultStoreId,
+                  });
+                  notify('Hisobdan chiqarildi', 'info');
+                  setWoOpen(false);
+                } catch (err) {
+                  notify(err instanceof Error ? err.message : 'Hisobdan chiqarishda xatolik', 'error');
+                }
               }}
               className="w-full h-11 rounded-xl bg-red-600 text-white text-xs font-semibold"
             >
@@ -998,21 +1341,26 @@ export const InventoryPage: React.FC = () => {
               type="button"
               onClick={async () => {
                 if (!supName.trim()) return;
-                const nowIso = new Date().toISOString();
-                await upsertSupplier({
-                  id: uid('sup'),
-                  name: supName.trim(),
-                  contactName: supContact.trim(),
-                  phone: supPhone.trim(),
-                  debtBalance: 0,
-                  storeId: db.stores[0].id,
-                  createdAt: nowIso,
-                  updatedAt: nowIso,
-                  createdBy: 'usr-owner',
-                });
-                notify("Ta'minotchi qo'shildi", 'success');
-                setSupModalOpen(false);
-                setSupName('');
+                try {
+                  const nowIso = new Date().toISOString();
+                  await upsertSupplier({
+                    id: uid('sup'),
+                    name: supName.trim(),
+                    contactName: supContact.trim() || supName.trim(),
+                    phone: supPhone.trim(),
+                    debtBalance: 0,
+                    storeId: defaultStoreId,
+                    createdAt: nowIso,
+                    updatedAt: nowIso,
+                    createdBy: currentUser?.id ?? 'usr-owner',
+                  });
+                  notify("Ta'minotchi qo'shildi", 'success');
+                  setSupModalOpen(false);
+                  setSupName('');
+                  setSupContact('');
+                } catch (err) {
+                  notify(err instanceof Error ? err.message : "Ta'minotchini saqlashda xatolik", 'error');
+                }
               }}
               className="w-full h-10 rounded-lg bg-teal-700 text-white text-xs font-semibold"
             >
@@ -1030,31 +1378,48 @@ export const InventoryPage: React.FC = () => {
               <h3 className="font-display text-base font-bold">{t.inventory.newPO}</h3>
               <button type="button" onClick={() => setPoOpen(false)}><X className="w-4 h-4" /></button>
             </div>
-            <select value={poSupplierId} onChange={(e) => setPoSupplierId(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
-              {db.suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[11px] font-medium text-slate-500">Yetkazib beruvchi</label>
+                <button
+                  type="button"
+                  onClick={() => setQuickAdd({ kind: 'supplier', target: 'po' })}
+                  className="text-[11px] font-semibold text-teal-700 dark:text-teal-400 hover:underline"
+                >
+                  + Yangi
+                </button>
+              </div>
+              <select value={poSupplierId} onChange={(e) => setPoSupplierId(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
+                {scopedSuppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
             <select value={poVariantId} onChange={(e) => setPoVariantId(e.target.value)} className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
-              {db.products.flatMap((p) => p.variants.map((v) => <option key={v.id} value={v.id}>{p.name} ({v.sku})</option>))}
+              {scopedProducts.flatMap((p) => p.variants.map((v) => <option key={v.id} value={v.id}>{p.name} ({v.sku})</option>))}
             </select>
             <input type="number" min={1} value={poQty} onChange={(e) => setPoQty(Number(e.target.value))} className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono" />
             <button
               type="button"
               onClick={async () => {
-                const found = variantLookup.get(poVariantId);
-                if (!found) return;
-                const total = found.variant.purchasePrice * poQty;
-                await createPurchaseOrder({
-                  number: `BUY-${String(db.purchaseOrders.length + 10).padStart(3, '0')}`,
-                  supplierId: poSupplierId,
-                  warehouseId: db.warehouses[0].id,
-                  items: [{ productId: found.product.id, variantId: found.variant.id, productName: found.product.name, variantLabel: found.variant.sku, qty: poQty, purchasePrice: found.variant.purchasePrice, total }],
-                  totalAmount: total,
-                  status: 'ordered',
-                  expectedDate: new Date(Date.now() + 3 * 86400000).toISOString(),
-                  storeId: db.stores[0].id,
-                });
-                notify('Buyurtma yaratildi', 'success');
-                setPoOpen(false);
+                try {
+                  const found = variantLookup.get(poVariantId);
+                  if (!found || poQty <= 0) return;
+                  const total = found.variant.purchasePrice * poQty;
+                  const whId = scopedWarehouses[0]?.id ?? db.warehouses[0]?.id ?? '';
+                  await createPurchaseOrder({
+                    number: `BUY-${String(db.purchaseOrders.length + 1).padStart(3, '0')}`,
+                    supplierId: poSupplierId,
+                    warehouseId: whId,
+                    items: [{ productId: found.product.id, variantId: found.variant.id, productName: found.product.name, variantLabel: found.variant.sku, qty: poQty, purchasePrice: found.variant.purchasePrice, total }],
+                    totalAmount: total,
+                    status: 'ordered',
+                    expectedDate: new Date(Date.now() + 3 * 86400000).toISOString(),
+                    storeId: scopedWarehouses[0]?.storeId ?? defaultStoreId,
+                  });
+                  notify('Buyurtma yaratildi', 'success');
+                  setPoOpen(false);
+                } catch (err) {
+                  notify(err instanceof Error ? err.message : 'Buyurtma yaratishda xatolik', 'error');
+                }
               }}
               className="w-full h-10 rounded-lg bg-teal-700 text-white text-xs font-semibold"
             >
@@ -1063,6 +1428,22 @@ export const InventoryPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <QuickAddModal
+        open={Boolean(quickAdd)}
+        kind={quickAdd?.kind ?? null}
+        storeId={defaultStoreId}
+        onClose={() => setQuickAdd(null)}
+        onCreated={(created) => {
+          if (!quickAdd) return;
+          if (quickAdd.kind === 'supplier') {
+            if (quickAdd.target === 'rec') setRecSupplierId(created.id);
+            else if (quickAdd.target === 'po') setPoSupplierId(created.id);
+          } else if (quickAdd.kind === 'warehouse') {
+            setRecWarehouseId(created.id);
+          }
+        }}
+      />
     </div>
   );
 };

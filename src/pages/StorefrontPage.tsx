@@ -15,8 +15,15 @@ import { formatDateTime, formatMoney, useT } from '../i18n';
 import { MEDIA } from '../assets/media';
 import { ProductThumb } from '../components/BarcodeSvg';
 import { generateQrDataUrl } from '../utils/barcode';
-import { OnlineOrderItem, Product } from '../types/models';
+import { OnlineOrder, OnlineOrderItem, Product } from '../types/models';
 import { paymentGateway } from '../integrations/interfaces';
+
+const ORDER_STATUS_UZ: Record<OnlineOrder['status'], { label: string; cls: string }> = {
+  new: { label: 'Yangi', cls: 'bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300' },
+  confirmed: { label: 'Tasdiqlangan', cls: 'bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300' },
+  delivered: { label: 'Yetkazilgan', cls: 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' },
+  canceled: { label: 'Bekor qilingan', cls: 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300' },
+};
 
 export const StorefrontPage: React.FC<{ publicStandalone?: boolean; onBackToLogin?: () => void }> = ({
   publicStandalone = false,
@@ -24,6 +31,8 @@ export const StorefrontPage: React.FC<{ publicStandalone?: boolean; onBackToLogi
 }) => {
   const db = useAppStore((s) => s.db);
   const can = useAppStore((s) => s.can);
+  const canAccessStore = useAppStore((s) => s.canAccessStore);
+  const activeStoreId = useAppStore((s) => s.activeStoreId);
   const language = useAppStore((s) => s.language);
   const getVariantStock = useAppStore((s) => s.getVariantStock);
   const createOnlineOrder = useAppStore((s) => s.createOnlineOrder);
@@ -44,6 +53,7 @@ export const StorefrontPage: React.FC<{ publicStandalone?: boolean; onBackToLogi
   const [custName, setCustName] = useState('');
   const [custPhone, setCustPhone] = useState('+99890');
   const [custAddress, setCustAddress] = useState('');
+  const [orderStoreId, setOrderStoreId] = useState('');
   const [deliveryMethod, setDeliveryMethod] = useState<'delivery' | 'pickup'>('delivery');
   const [payMethod, setPayMethod] = useState<'cash_on_delivery' | 'online_placeholder'>('cash_on_delivery');
   const [placedOrderNum, setPlacedOrderNum] = useState<string | null>(null);
@@ -61,6 +71,13 @@ export const StorefrontPage: React.FC<{ publicStandalone?: boolean; onBackToLogi
       return true;
     });
   }, [db, catFilter, search]);
+
+  const scopedOrders = useMemo(() => {
+    if (!db) return [];
+    return db.onlineOrders.filter(
+      (ord) => canAccessStore(ord.storeId) && (activeStoreId === 'all' || ord.storeId === activeStoreId)
+    );
+  }, [db, activeStoreId, canAccessStore]);
 
   if (!db) return null;
 
@@ -106,23 +123,29 @@ export const StorefrontPage: React.FC<{ publicStandalone?: boolean; onBackToLogi
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (bag.length === 0 || !custName.trim() || !custPhone.trim()) return;
-    if (payMethod === 'online_placeholder') {
-      const res = await paymentGateway.createPaymentLink({ orderId: 'temp', amount: bagTotal, provider: 'click' });
-      notify(res.note, 'info');
+    const targetStoreId =
+      orderStoreId || (activeStoreId !== 'all' ? activeStoreId : db.stores[0]?.id ?? 'store-toraqorgon');
+    try {
+      if (payMethod === 'online_placeholder') {
+        const res = await paymentGateway.createPaymentLink({ orderId: 'temp', amount: bagTotal, provider: 'click' });
+        notify(res.note, 'info');
+      }
+      const order = await createOnlineOrder({
+        customerName: custName.trim(),
+        customerPhone: custPhone.trim(),
+        deliveryAddress: deliveryMethod === 'pickup' ? "Do'kondan olib ketish" : custAddress.trim(),
+        deliveryMethod,
+        paymentMethod: payMethod,
+        items: bag,
+        totalAmount: bagTotal,
+        storeId: targetStoreId,
+      });
+      setBag([]);
+      setPlacedOrderNum(order.orderNumber);
+      notify(`Buyurtma #${order.orderNumber} yuborildi`, 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Buyurtma yuborishda xatolik', 'error');
     }
-    const order = await createOnlineOrder({
-      customerName: custName.trim(),
-      customerPhone: custPhone.trim(),
-      deliveryAddress: deliveryMethod === 'pickup' ? 'Do\'kondan olib ketish' : custAddress.trim(),
-      deliveryMethod,
-      paymentMethod: payMethod,
-      items: bag,
-      totalAmount: bagTotal,
-      storeId: db.stores[0].id,
-    });
-    setBag([]);
-    setPlacedOrderNum(order.orderNumber);
-    notify(`Buyurtma #${order.orderNumber} yuborildi`, 'success');
   };
 
   return (
@@ -155,7 +178,7 @@ export const StorefrontPage: React.FC<{ publicStandalone?: boolean; onBackToLogi
                   viewMode === 'orders' ? 'bg-white dark:bg-slate-900 shadow-xs' : 'text-slate-500'
                 }`}
               >
-                {t.storefront.ordersManagement} ({db.onlineOrders.filter((o) => o.status === 'new').length})
+                {t.storefront.ordersManagement} ({scopedOrders.filter((o) => o.status === 'new').length})
               </button>
             </div>
           ) : (
@@ -208,7 +231,9 @@ export const StorefrontPage: React.FC<{ publicStandalone?: boolean; onBackToLogi
               className="w-full h-full object-cover"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent flex flex-col justify-end p-5 sm:p-7">
-              <div className="text-xs font-medium text-teal-300">Toshkent · Chilonzor & Samarqand Darvoza</div>
+              <div className="text-xs font-medium text-teal-300">
+                {db.stores.map((s) => s.name).join(' · ') || 'SHU BREND OMBOR'}
+              </div>
               <h2 className="font-display text-xl sm:text-3xl font-bold text-white mt-1">
                 {db.settings.brandName}
               </h2>
@@ -310,55 +335,85 @@ export const StorefrontPage: React.FC<{ publicStandalone?: boolean; onBackToLogi
       {/* ADMIN: ONLINE ORDERS MANAGEMENT */}
       {viewMode === 'orders' && canManageOrders && (
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-100 dark:divide-slate-800">
-          {db.onlineOrders.map((ord) => (
-            <div key={ord.id} className="p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div>
-                <div className="font-mono font-bold text-sm">{ord.orderNumber} · {ord.customerName}</div>
-                <div className="text-slate-500 mt-0.5">
-                  {ord.customerPhone} · {ord.deliveryAddress} · {formatDateTime(ord.createdAt, language)}
+          {scopedOrders.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-400">Onlayn buyurtmalar hozircha yo'q</div>
+          ) : (
+            scopedOrders.map((ord) => {
+              const stMeta = ORDER_STATUS_UZ[ord.status];
+              const ordStore = db.stores.find((s) => s.id === ord.storeId);
+              return (
+                <div key={ord.id} className="p-4 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div>
+                    <div className="font-mono font-bold text-sm">
+                      {ord.orderNumber} · {ord.customerName}
+                    </div>
+                    <div className="text-slate-500 mt-0.5">
+                      {ord.customerPhone} · {ord.deliveryAddress} · {ordStore ? `${ordStore.name} · ` : ''}{formatDateTime(ord.createdAt, language)}
+                    </div>
+                    <div className="text-slate-600 dark:text-slate-300 mt-1">
+                      {ord.items.map((i) => `${i.productName} (${i.variantLabel}) x${i.qty}`).join(', ')}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <div className="font-mono font-bold text-sm">{formatMoney(ord.totalAmount, { lang: language })}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`px-2 py-0.5 rounded-md font-semibold text-[11px] mr-1 ${stMeta.cls}`}>
+                        {stMeta.label}
+                      </span>
+                      {ord.status === 'new' && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await updateOnlineOrderStatus(ord.id, 'confirmed');
+                              notify('Buyurtma tasdiqlandi va ombordan yechildi', 'success');
+                            } catch (err) {
+                              notify(err instanceof Error ? err.message : 'Buyurtmani tasdiqlashda xatolik', 'error');
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded bg-teal-700 text-white font-semibold"
+                        >
+                          Tasdiqlash
+                        </button>
+                      )}
+                      {ord.status === 'confirmed' && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await updateOnlineOrderStatus(ord.id, 'delivered');
+                              notify('Buyurtma yetkazilgan deb belgilandi', 'success');
+                            } catch (err) {
+                              notify(err instanceof Error ? err.message : 'Holatni yangilashda xatolik', 'error');
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded bg-emerald-600 text-white font-semibold"
+                        >
+                          Yetkazildi
+                        </button>
+                      )}
+                      {(ord.status === 'new' || ord.status === 'confirmed') && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await updateOnlineOrderStatus(ord.id, 'canceled');
+                              notify('Buyurtma bekor qilindi', 'info');
+                            } catch (err) {
+                              notify(err instanceof Error ? err.message : 'Bekor qilishda xatolik', 'error');
+                            }
+                          }}
+                          className="px-2.5 py-1 rounded border border-red-300 text-red-600 font-semibold"
+                        >
+                          Bekor qilish
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-slate-600 dark:text-slate-300 mt-1">
-                  {ord.items.map((i) => `${i.productName} (${i.variantLabel}) x${i.qty}`).join(', ')}
-                </div>
-              </div>
-              <div className="flex flex-col items-end gap-2">
-                <div className="font-mono font-bold text-sm">{formatMoney(ord.totalAmount, { lang: language })}</div>
-                <div className="flex items-center gap-1.5">
-                  <span className="font-semibold uppercase text-slate-500 mr-1">{ord.status}</span>
-                  {ord.status === 'new' && (
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await updateOnlineOrderStatus(ord.id, 'confirmed');
-                        notify('Buyurtma tasdiqlandi va ombordan yechildi', 'success');
-                      }}
-                      className="px-2.5 py-1 rounded bg-teal-700 text-white font-semibold"
-                    >
-                      Tasdiqlash
-                    </button>
-                  )}
-                  {ord.status === 'confirmed' && (
-                    <button
-                      type="button"
-                      onClick={() => updateOnlineOrderStatus(ord.id, 'delivered')}
-                      className="px-2.5 py-1 rounded bg-emerald-600 text-white font-semibold"
-                    >
-                      Yetkazildi
-                    </button>
-                  )}
-                  {(ord.status === 'new' || ord.status === 'confirmed') && (
-                    <button
-                      type="button"
-                      onClick={() => updateOnlineOrderStatus(ord.id, 'canceled')}
-                      className="px-2.5 py-1 rounded border border-red-300 text-red-600 font-semibold"
-                    >
-                      Bekor qilish
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
+              );
+            })
+          )}
         </div>
       )}
 
@@ -433,6 +488,17 @@ export const StorefrontPage: React.FC<{ publicStandalone?: boolean; onBackToLogi
                   <form onSubmit={handlePlaceOrder} className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                     <input required value={custName} onChange={(e) => setCustName(e.target.value)} placeholder="Ismingiz *" className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs" />
                     <input required value={custPhone} onChange={(e) => setCustPhone(e.target.value)} placeholder="Telefon *" className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs font-mono" />
+                    {db.stores.length > 1 && (
+                      <select
+                        value={orderStoreId || (activeStoreId !== 'all' ? activeStoreId : db.stores[0]?.id ?? '')}
+                        onChange={(e) => setOrderStoreId(e.target.value)}
+                        className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs"
+                      >
+                        {db.stores.map((st) => (
+                          <option key={st.id} value={st.id}>Filial: {st.name}</option>
+                        ))}
+                      </select>
+                    )}
                     <select value={deliveryMethod} onChange={(e) => setDeliveryMethod(e.target.value as 'delivery' | 'pickup')} className="w-full h-10 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs">
                       <option value="delivery">Kuryer orqali yetkazish</option>
                       <option value="pickup">Do'kondan olib ketish</option>

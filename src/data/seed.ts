@@ -29,9 +29,9 @@ import {
   Transaction,
   User,
   Warehouse,
-} from '../types/models';
-import { generateEAN13 } from '../utils/barcode';
-import { MEDIA } from '../assets/media';
+} from '../types/models.ts';
+import { generateEAN13 } from '../utils/barcode.ts';
+import { MEDIA } from '../assets/media.ts';
 
 const now = new Date();
 const daysAgo = (days: number, hour = 14, min = 30) => {
@@ -46,7 +46,7 @@ const daysAhead = (days: number) => {
   return d.toISOString();
 };
 
-const ALL_PERMISSIONS: Permission[] = [
+export const ALL_PERMISSIONS: Permission[] = [
   'view_dashboard',
   'view_profit_cost',
   'use_pos',
@@ -71,6 +71,9 @@ const ALL_PERMISSIONS: Permission[] = [
   'view_audit_log',
 ];
 
+export const DEFAULT_SIZES = ['S', 'M', 'L', 'XL', 'XXL', '3XL', '30', '31', '32', '34', '39', '40', '41', '42', '43', '44', '48', '50', '52', '115cm', '120cm', '41-45', 'Standart'];
+export const DEFAULT_COLORS = ['Qora', 'Oq', "Ko'k", 'Kulrang', 'Jigarrang', 'Bej', 'Qumrang', 'Yashil', 'Qizil'];
+
 export function getMensClothingCategories(storeId: string, ts = new Date().toISOString()): Category[] {
   return [
     { id: 'cat-shirts', nameUz: "Ko'ylaklar (Rubashka)", nameRu: 'Рубашки', sortOrder: 1, storeId, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
@@ -86,23 +89,23 @@ export function getMensClothingCategories(storeId: string, ts = new Date().toISO
 
 export function createSeedDatabase(): DatabaseSnapshot {
   const ts = daysAgo(30, 9, 0);
-  const store1Id = 'store-chilonzor';
-  const store2Id = 'store-samdarvoza';
-  const wh1Id = 'wh-chilonzor';
-  const wh2Id = 'wh-samdarvoza';
+  const store1Id = 'store-toraqorgon';
+  const store2Id = 'store-mingbuloq';
+  const wh1Id = 'wh-toraqorgon';
+  const wh2Id = 'wh-mingbuloq';
 
   const roles: Role[] = [
     { id: 'owner', nameUz: 'Egasi (Owner)', nameRu: 'Владелец', permissions: ALL_PERMISSIONS },
     {
       id: 'admin',
-      nameUz: 'Administrator',
-      nameRu: 'Администратор',
+      nameUz: 'Bosh administrator',
+      nameRu: 'Главный администратор',
       permissions: ALL_PERMISSIONS.filter((p) => p !== 'manage_settings'),
     },
     {
       id: 'manager',
-      nameUz: 'Menejer',
-      nameRu: 'Менеджер',
+      nameUz: 'Filial menejeri',
+      nameRu: 'Менеджер филиала',
       permissions: [
         'view_dashboard',
         'view_profit_cost',
@@ -117,6 +120,8 @@ export function createSeedDatabase(): DatabaseSnapshot {
         'view_customers',
         'manage_customers',
         'manage_debts',
+        'view_finance',
+        'manage_finance',
         'view_employees',
         'view_reports',
         'manage_online_orders',
@@ -139,8 +144,8 @@ export function createSeedDatabase(): DatabaseSnapshot {
   const warehouses: Warehouse[] = [
     {
       id: wh1Id,
-      name: 'Asosiy Ombor (Chilonzor)',
-      address: 'Toshkent, Chilonzor 9-kvartal, 14-uy',
+      name: "To'raqo'rg'on Ombori",
+      address: "Namangan vil., To'raqo'rg'on tumani, Markaziy ko'cha 12",
       isMain: true,
       storeId: store1Id,
       createdAt: ts,
@@ -149,8 +154,8 @@ export function createSeedDatabase(): DatabaseSnapshot {
     },
     {
       id: wh2Id,
-      name: 'Filial Ombor (SamDarvoza)',
-      address: "Toshkent, Qoratosh ko'chasi, 5A",
+      name: 'Mingbuloq Ombori',
+      address: "Namangan vil., Mingbuloq tumani, Jomasho'y markazi 8",
       isMain: false,
       storeId: store2Id,
       createdAt: ts,
@@ -162,9 +167,9 @@ export function createSeedDatabase(): DatabaseSnapshot {
   const stores: Store[] = [
     {
       id: store1Id,
-      name: 'Chilonzor Flagman',
-      address: "Toshkent, Bunyodkor shoh ko'chasi, 42",
-      phone: '+998 71 200 11 22',
+      name: "SHU BREND TO'RAQO'RG'ON",
+      address: "Namangan vil., To'raqo'rg'on tumani, Markaziy ko'cha 12",
+      phone: '+998 88 926 04 04',
       isActive: true,
       defaultWarehouseId: wh1Id,
       storeCode: '01',
@@ -176,9 +181,9 @@ export function createSeedDatabase(): DatabaseSnapshot {
     },
     {
       id: store2Id,
-      name: 'Samarqand Darvoza',
-      address: "Toshkent, Qoratosh ko'chasi, 5A",
-      phone: '+998 71 200 33 44',
+      name: 'SHU BREND MINGBULOQ',
+      address: "Namangan vil., Mingbuloq tumani, Jomasho'y markazi 8",
+      phone: '+998 90 222 33 44',
       isActive: true,
       defaultWarehouseId: wh2Id,
       storeCode: '02',
@@ -190,15 +195,20 @@ export function createSeedDatabase(): DatabaseSnapshot {
     },
   ];
 
+  // 10 Initial Users (Scalable to 20, 50, 100+ users without artificial limit)
   const users: User[] = [
     {
       id: 'usr-owner',
-      name: 'Sardorbek Karimov',
+      name: 'ISLOMBEK',
       phone: '+998889260404',
+      login: 'islombek',
       password: '51111',
       pin: '51111',
+      position: "Do'kon egasi",
       roleId: 'owner',
+      primaryStoreId: store1Id,
       assignedStoreIds: [store1Id, store2Id],
+      sellStoreIds: [store1Id, store2Id],
       isActive: true,
       storeId: store1Id,
       createdAt: ts,
@@ -207,12 +217,16 @@ export function createSeedDatabase(): DatabaseSnapshot {
     },
     {
       id: 'usr-admin',
-      name: 'Dilnoza Rahimova',
+      name: 'OTABEK',
       phone: '+998902223344',
+      login: 'otabek',
       password: '123456',
       pin: '2222',
+      position: 'Bosh administrator',
       roleId: 'admin',
+      primaryStoreId: store1Id,
       assignedStoreIds: [store1Id, store2Id],
+      sellStoreIds: [store1Id, store2Id],
       isActive: true,
       storeId: store1Id,
       createdAt: ts,
@@ -223,10 +237,14 @@ export function createSeedDatabase(): DatabaseSnapshot {
       id: 'usr-manager',
       name: 'Jasur Alimov',
       phone: '+998903334455',
+      login: 'jasur_trq',
       password: '123456',
       pin: '3333',
+      position: 'Filial menejeri',
       roleId: 'manager',
-      assignedStoreIds: [store1Id, store2Id],
+      primaryStoreId: store1Id,
+      assignedStoreIds: [store1Id],
+      sellStoreIds: [store1Id],
       isActive: true,
       storeId: store1Id,
       createdAt: ts,
@@ -237,10 +255,14 @@ export function createSeedDatabase(): DatabaseSnapshot {
       id: 'usr-cashier',
       name: 'Madina Toshmatova',
       phone: '+998904445566',
+      login: 'madina_trq',
       password: '123456',
       pin: '4444',
+      position: 'Katta kassir',
       roleId: 'cashier',
+      primaryStoreId: store1Id,
       assignedStoreIds: [store1Id],
+      sellStoreIds: [store1Id],
       isActive: true,
       storeId: store1Id,
       createdAt: ts,
@@ -251,12 +273,106 @@ export function createSeedDatabase(): DatabaseSnapshot {
       id: 'usr-warehouse',
       name: 'Bobur Xolmatov',
       phone: '+998905556677',
+      login: 'bobur_trq',
       password: '123456',
       pin: '5555',
+      position: 'Omborchi',
       roleId: 'warehouse',
-      assignedStoreIds: [store1Id, store2Id],
+      primaryStoreId: store1Id,
+      assignedStoreIds: [store1Id],
+      sellStoreIds: [],
       isActive: true,
       storeId: store1Id,
+      createdAt: ts,
+      updatedAt: ts,
+      createdBy: 'usr-owner',
+    },
+    {
+      id: 'usr-trq-seller',
+      name: 'Azizbek Rahmonov',
+      phone: '+998906667788',
+      login: 'azizbek_trq',
+      password: '123456',
+      pin: '6666',
+      position: 'Sotuvchi-kassir',
+      roleId: 'cashier',
+      primaryStoreId: store1Id,
+      assignedStoreIds: [store1Id],
+      sellStoreIds: [store1Id],
+      isActive: true,
+      storeId: store1Id,
+      createdAt: ts,
+      updatedAt: ts,
+      createdBy: 'usr-owner',
+    },
+    {
+      id: 'usr-mng-manager',
+      name: 'Sardorbek Rustamov',
+      phone: '+998913334411',
+      login: 'sardor_mng',
+      password: '123456',
+      pin: '7777',
+      position: 'Filial menejeri',
+      roleId: 'manager',
+      primaryStoreId: store2Id,
+      assignedStoreIds: [store2Id],
+      sellStoreIds: [store2Id],
+      isActive: true,
+      storeId: store2Id,
+      createdAt: ts,
+      updatedAt: ts,
+      createdBy: 'usr-owner',
+    },
+    {
+      id: 'usr-mng-cashier1',
+      name: 'Dilnoza Karimova',
+      phone: '+998914445522',
+      login: 'dilnoza_mng',
+      password: '123456',
+      pin: '8888',
+      position: 'Katta kassir',
+      roleId: 'cashier',
+      primaryStoreId: store2Id,
+      assignedStoreIds: [store2Id],
+      sellStoreIds: [store2Id],
+      isActive: true,
+      storeId: store2Id,
+      createdAt: ts,
+      updatedAt: ts,
+      createdBy: 'usr-owner',
+    },
+    {
+      id: 'usr-mng-cashier2',
+      name: 'Dostonbek Qodirov',
+      phone: '+998915556633',
+      login: 'doston_mng',
+      password: '123456',
+      pin: '9999',
+      position: 'Sotuvchi-kassir',
+      roleId: 'cashier',
+      primaryStoreId: store2Id,
+      assignedStoreIds: [store2Id],
+      sellStoreIds: [store2Id],
+      isActive: true,
+      storeId: store2Id,
+      createdAt: ts,
+      updatedAt: ts,
+      createdBy: 'usr-owner',
+    },
+    {
+      id: 'usr-mng-warehouse',
+      name: 'Shoxrux Olimov',
+      phone: '+998916667744',
+      login: 'shoxrux_mng',
+      password: '123456',
+      pin: '1010',
+      position: 'Omborchi',
+      roleId: 'warehouse',
+      primaryStoreId: store2Id,
+      assignedStoreIds: [store2Id],
+      sellStoreIds: [],
+      isActive: true,
+      storeId: store2Id,
       createdAt: ts,
       updatedAt: ts,
       createdBy: 'usr-owner',
@@ -277,11 +393,13 @@ export function createSeedDatabase(): DatabaseSnapshot {
   const suppliers: Supplier[] = [
     { id: 'sup-1', name: 'Tashkent Textile Optom', contactName: 'Azizbek Umarov', phone: '+998935011122', address: "Ipak Yo'li bozori, 14-blok", debtBalance: 4500000, storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
     { id: 'sup-2', name: 'Istanbul Shoes & Suit Import', contactName: 'Murat Yilmaz', phone: '+998909887766', address: 'Abu Saxiy savdo majmuasi, C-12', debtBalance: 2200000, storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
-    { id: 'sup-3', name: 'Bursa Menswear Optom', contactName: 'Kemal Aydin', phone: '+998977772211', address: 'Chorsu savdo markazi, 8-do\'kon', debtBalance: 0, storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
-    { id: 'sup-4', name: 'Chorsu Leather & Accessories', contactName: 'Otabek Qodirov', phone: '+998946554433', address: 'Bek Baraka, 45-pavilyon', debtBalance: 1850000, storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'sup-3', name: 'Bursa Menswear Optom', contactName: 'Kemal Aydin', phone: '+998977772211', address: "Namangan Chorsu savdo markazi, 8-do'kon", debtBalance: 0, storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'sup-4', name: 'Chorsu Leather & Accessories', contactName: 'Otabek Qodirov', phone: '+998946554433', address: 'Bek Baraka, 45-pavilyon', debtBalance: 1850000, storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
   ];
 
   interface RawProd {
+    store: string;
+    wh: string;
     name: string;
     cat: string;
     brand: string;
@@ -292,40 +410,43 @@ export function createSeedDatabase(): DatabaseSnapshot {
     buy: number;
     sell: number;
     wholesale: number;
-    variants: { size?: string; color?: string; q1: number; q2: number }[];
+    variants: { size?: string; color?: string; q: number }[];
   }
 
+  // Strictly isolated branch products: first 16 in SHU BREND TO'RAQO'RG'ON, next 14 in SHU BREND MINGBULOQ
   const rawProducts: RawProd[] = [
-    { name: 'Jun Overshirt Kurtka', cat: 'cat-outerwear', brand: 'br-samarkand', sup: 'sup-1', unit: 'dona', collection: 'Kuz-Qish 2026', photo: MEDIA.apparel, buy: 280000, sell: 460000, wholesale: 390000, variants: [{ size: 'M', color: 'Qumrang', q1: 12, q2: 7 }, { size: 'L', color: 'Qumrang', q1: 9, q2: 5 }, { size: 'XL', color: "Ko'k", q1: 6, q2: 4 }] },
-    { name: 'Paxta Trikotaj Sviter', cat: 'cat-knitwear', brand: 'br-samarkand', sup: 'sup-1', unit: 'dona', collection: 'Kuz-Qish 2026', photo: MEDIA.apparel, buy: 145000, sell: 245000, wholesale: 210000, variants: [{ size: 'M', color: 'Kulrang', q1: 18, q2: 10 }, { size: 'L', color: 'Qora', q1: 14, q2: 8 }] },
-    { name: 'Klassik Chinos Shim', cat: 'cat-pants', brand: 'br-samarkand', sup: 'sup-1', unit: 'dona', collection: 'Bazaviy', buy: 130000, sell: 220000, wholesale: 185000, variants: [{ size: '32', color: 'Bej', q1: 15, q2: 8 }, { size: '34', color: 'Qora', q1: 11, q2: 6 }] },
-    { name: 'Oversize Futbolka 100% Paxta', cat: 'cat-tshirts', brand: 'br-chorsu', sup: 'sup-1', unit: 'dona', collection: 'Yozgi', buy: 48000, sell: 95000, wholesale: 75000, variants: [{ size: 'M', color: 'Oq', q1: 34, q2: 20 }, { size: 'L', color: 'Qora', q1: 28, q2: 15 }, { size: 'XL', color: 'Yashil', q1: 4, q2: 3 }] },
-    { name: "Linen Yozgi Ko'ylak", cat: 'cat-shirts', brand: 'br-samarkand', sup: 'sup-1', unit: 'dona', collection: 'Bahor-Yoz', buy: 115000, sell: 195000, wholesale: 165000, variants: [{ size: 'S', color: 'Oq', q1: 10, q2: 6 }, { size: 'M', color: "Ko'k", q1: 8, q2: 5 }] },
-    { name: 'Denim Jinsi Kurtka', cat: 'cat-outerwear', brand: 'br-terra', sup: 'sup-1', unit: 'dona', collection: 'Kuz 2026', buy: 210000, sell: 365000, wholesale: 310000, variants: [{ size: 'M', color: "Ko'k", q1: 7, q2: 4 }, { size: 'L', color: 'Qora', q1: 3, q2: 2 }] },
-    { name: 'Charm Krossovka Urban', cat: 'cat-shoes', brand: 'br-terra', sup: 'sup-2', unit: 'juft', collection: 'Premium', photo: MEDIA.shoes, buy: 340000, sell: 550000, wholesale: 480000, variants: [{ size: '41', color: 'Oq', q1: 8, q2: 5 }, { size: '42', color: 'Oq', q1: 11, q2: 6 }, { size: '43', color: 'Oq', q1: 5, q2: 3 }] },
-    { name: 'Zamsha Loferlar Klassik', cat: 'cat-shoes', brand: 'br-terra', sup: 'sup-2', unit: 'juft', collection: 'Ofis', photo: MEDIA.shoes, buy: 290000, sell: 480000, wholesale: 410000, variants: [{ size: '40', color: 'Jigarrang', q1: 6, q2: 3 }, { size: '42', color: 'Qora', q1: 7, q2: 4 }] },
-    { name: 'Yugurish Krossovkasi AirFlex', cat: 'cat-shoes', brand: 'br-terra', sup: 'sup-2', unit: 'juft', collection: 'Sport', buy: 230000, sell: 390000, wholesale: 330000, variants: [{ size: '39', color: 'Kulrang', q1: 9, q2: 4 }, { size: '41', color: 'Qora', q1: 10, q2: 5 }] },
-    { name: 'Qishki Chelsi Etik', cat: 'cat-shoes', brand: 'br-terra', sup: 'sup-2', unit: 'juft', collection: 'Qish 2026', buy: 410000, sell: 680000, wholesale: 580000, variants: [{ size: '42', color: 'Qora', q1: 4, q2: 2 }, { size: '43', color: 'Jigarrang', q1: 2, q2: 1 }] },
-    { name: 'Oxford Oq Klassik Ko\'ylak', cat: 'cat-shirts', brand: 'br-aura', sup: 'sup-3', unit: 'dona', collection: 'Ofis', photo: MEDIA.apparel, buy: 120000, sell: 215000, wholesale: 175000, variants: [{ size: 'M', color: 'Oq', q1: 15, q2: 9 }, { size: 'L', color: 'Oq', q1: 12, q2: 7 }] },
-    { name: 'Slim Fit Rubashka Moviy', cat: 'cat-shirts', brand: 'br-aura', sup: 'sup-3', unit: 'dona', collection: 'Ofis', buy: 110000, sell: 195000, wholesale: 160000, variants: [{ size: 'M', color: "Ko'k", q1: 14, q2: 8 }, { size: 'XL', color: "Ko'k", q1: 9, q2: 5 }] },
-    { name: 'Kletkali Flanel Ko\'ylak', cat: 'cat-shirts', brand: 'br-chorsu', sup: 'sup-1', unit: 'dona', collection: 'Kuz 2026', buy: 125000, sell: 225000, wholesale: 185000, variants: [{ size: 'L', color: 'Qizil', q1: 10, q2: 6 }, { size: 'XL', color: 'Qora', q1: 8, q2: 4 }] },
-    { name: 'Ikki Tugmali Klassik Kostyum', cat: 'cat-suits', brand: 'br-aura', sup: 'sup-2', unit: 'dona', collection: 'Premium', photo: MEDIA.apparel, buy: 650000, sell: 1150000, wholesale: 950000, variants: [{ size: '48', color: 'Qora', q1: 6, q2: 3 }, { size: '50', color: "Ko'k", q1: 5, q2: 3 }, { size: '52', color: 'Kulrang', q1: 4, q2: 2 }] },
-    { name: 'Troika To\'y Kostyum-Shim', cat: 'cat-suits', brand: 'br-nordic', sup: 'sup-2', unit: 'dona', collection: 'Premium', buy: 820000, sell: 1450000, wholesale: 1200000, variants: [{ size: '50', color: 'Qora', q1: 4, q2: 2 }, { size: '52', color: 'Bej', q1: 3, q2: 2 }] },
-    { name: 'Smart Casual Pijak', cat: 'cat-suits', brand: 'br-nordic', sup: 'sup-3', unit: 'dona', collection: 'Ofis', buy: 390000, sell: 680000, wholesale: 560000, variants: [{ size: '48', color: "Ko'k", q1: 7, q2: 4 }, { size: '50', color: 'Kulrang', q1: 6, q2: 3 }] },
-    { name: 'Polo Yoqali Futbolka Lacoste Usul', cat: 'cat-tshirts', brand: 'br-aura', sup: 'sup-3', unit: 'dona', collection: 'Bahor-Yoz', buy: 85000, sell: 165000, wholesale: 135000, variants: [{ size: 'M', color: 'Yashil', q1: 16, q2: 9 }, { size: 'L', color: 'Qora', q1: 14, q2: 8 }, { size: 'XL', color: 'Oq', q1: 10, q2: 6 }] },
-    { name: 'Bazaviy V-Yoqa Futbolka', cat: 'cat-tshirts', brand: 'br-chorsu', sup: 'sup-1', unit: 'dona', collection: 'Bazaviy', buy: 42000, sell: 85000, wholesale: 68000, variants: [{ size: 'M', color: 'Qora', q1: 25, q2: 14 }, { size: 'L', color: 'Oq', q1: 22, q2: 12 }] },
-    { name: 'Streych Jinsi Shim Slim', cat: 'cat-pants', brand: 'br-terra', sup: 'sup-2', unit: 'dona', collection: 'Kundalik', buy: 145000, sell: 265000, wholesale: 215000, variants: [{ size: '31', color: "Ko'k", q1: 12, q2: 7 }, { size: '32', color: 'Qora', q1: 15, q2: 9 }, { size: '34', color: "Ko'k", q1: 10, q2: 5 }] },
-    { name: 'Klassik Ofis Shim (Shirstoy)', cat: 'cat-pants', brand: 'br-aura', sup: 'sup-3', unit: 'dona', collection: 'Ofis', buy: 160000, sell: 290000, wholesale: 240000, variants: [{ size: '32', color: 'Qora', q1: 11, q2: 6 }, { size: '34', color: 'Kulrang', q1: 9, q2: 5 }] },
-    { name: 'Tabiiy Charm Kamar', cat: 'cat-accessories', brand: 'br-chorsu', sup: 'sup-4', unit: 'dona', collection: 'Klassik', buy: 68000, sell: 135000, wholesale: 110000, variants: [{ size: '115cm', color: 'Qora', q1: 20, q2: 12 }, { size: '120cm', color: 'Jigarrang', q1: 14, q2: 8 }] },
-    { name: 'Minimalist Charm Hamyon', cat: 'cat-accessories', brand: 'br-chorsu', sup: 'sup-4', unit: 'dona', collection: 'Klassik', buy: 82000, sell: 160000, wholesale: 130000, variants: [{ size: 'Standart', color: 'Qora', q1: 16, q2: 9 }] },
-    { name: 'Ipak Galstuk va Babochka', cat: 'cat-accessories', brand: 'br-nordic', sup: 'sup-4', unit: 'dona', collection: 'Ofis', buy: 45000, sell: 95000, wholesale: 75000, variants: [{ size: 'Standart', color: 'Qora', q1: 18, q2: 10 }, { size: 'Standart', color: 'Qizil', q1: 12, q2: 7 }] },
-    { name: 'Kargo Cho\'ntakli Shim', cat: 'cat-pants', brand: 'br-samarkand', sup: 'sup-1', unit: 'dona', collection: 'Sport', buy: 135000, sell: 245000, wholesale: 195000, variants: [{ size: '32', color: 'Yashil', q1: 10, q2: 6 }, { size: '34', color: 'Qora', q1: 8, q2: 5 }] },
-    { name: 'Kapishonli Flis Tolstovka (Hoodie)', cat: 'cat-knitwear', brand: 'br-chorsu', sup: 'sup-1', unit: 'dona', collection: 'Kuz-Qish 2026', buy: 135000, sell: 240000, wholesale: 195000, variants: [{ size: 'M', color: 'Qora', q1: 14, q2: 8 }, { size: 'L', color: 'Kulrang', q1: 12, q2: 7 }] },
-    { name: 'Vodolazka (Baland Yoqali Sviter)', cat: 'cat-knitwear', brand: 'br-aura', sup: 'sup-3', unit: 'dona', collection: 'Kuz-Qish 2026', buy: 98000, sell: 185000, wholesale: 150000, variants: [{ size: 'M', color: 'Qora', q1: 20, q2: 12 }, { size: 'L', color: 'Bej', q1: 14, q2: 8 }] },
-    { name: 'Kardigan Tugmali Jemfer', cat: 'cat-knitwear', brand: 'br-samarkand', sup: 'sup-1', unit: 'dona', collection: 'Kuz 2026', buy: 165000, sell: 295000, wholesale: 245000, variants: [{ size: 'L', color: "Ko'k", q1: 9, q2: 5 }, { size: 'XL', color: 'Jigarrang', q1: 7, q2: 4 }] },
-    { name: 'Drapp Qishki Palto Klassik', cat: 'cat-outerwear', brand: 'br-nordic', sup: 'sup-2', unit: 'dona', collection: 'Qish 2026', buy: 520000, sell: 890000, wholesale: 740000, variants: [{ size: '48', color: 'Qora', q1: 6, q2: 3 }, { size: '50', color: 'Bej', q1: 5, q2: 3 }] },
-    { name: 'Shamolto\'sar Bomber Kurtka', cat: 'cat-outerwear', brand: 'br-terra', sup: 'sup-2', unit: 'dona', collection: 'Bahor-Kuz', buy: 240000, sell: 420000, wholesale: 350000, variants: [{ size: 'M', color: 'Qora', q1: 11, q2: 6 }, { size: 'L', color: 'Yashil', q1: 9, q2: 5 }] },
-    { name: 'Erkaklar Paypoq To\'plami (5 juft)', cat: 'cat-accessories', brand: 'br-chorsu', sup: 'sup-1', unit: 'quti', collection: 'Bazaviy', buy: 32000, sell: 65000, wholesale: 50000, variants: [{ size: '41-45', color: 'Qora', q1: 35, q2: 20 }] },
+    { store: store1Id, wh: wh1Id, name: 'Jun Overshirt Kurtka', cat: 'cat-outerwear', brand: 'br-samarkand', sup: 'sup-1', unit: 'dona', collection: 'Kuz-Qish 2026', photo: MEDIA.apparel, buy: 280000, sell: 460000, wholesale: 390000, variants: [{ size: 'M', color: 'Qumrang', q: 12 }, { size: 'L', color: 'Qumrang', q: 9 }, { size: 'XL', color: "Ko'k", q: 6 }] },
+    { store: store1Id, wh: wh1Id, name: 'Paxta Trikotaj Sviter', cat: 'cat-knitwear', brand: 'br-samarkand', sup: 'sup-1', unit: 'dona', collection: 'Kuz-Qish 2026', photo: MEDIA.apparel, buy: 145000, sell: 245000, wholesale: 210000, variants: [{ size: 'M', color: 'Kulrang', q: 18 }, { size: 'L', color: 'Qora', q: 14 }] },
+    { store: store1Id, wh: wh1Id, name: 'Klassik Chinos Shim', cat: 'cat-pants', brand: 'br-samarkand', sup: 'sup-1', unit: 'dona', collection: 'Bazaviy', buy: 130000, sell: 220000, wholesale: 185000, variants: [{ size: '32', color: 'Bej', q: 15 }, { size: '34', color: 'Qora', q: 11 }] },
+    { store: store1Id, wh: wh1Id, name: 'Oversize Futbolka 100% Paxta', cat: 'cat-tshirts', brand: 'br-chorsu', sup: 'sup-1', unit: 'dona', collection: 'Yozgi', buy: 48000, sell: 95000, wholesale: 75000, variants: [{ size: 'M', color: 'Oq', q: 34 }, { size: 'L', color: 'Qora', q: 28 }, { size: 'XL', color: 'Yashil', q: 4 }] },
+    { store: store1Id, wh: wh1Id, name: "Linen Yozgi Ko'ylak", cat: 'cat-shirts', brand: 'br-samarkand', sup: 'sup-1', unit: 'dona', collection: 'Bahor-Yoz', buy: 115000, sell: 195000, wholesale: 165000, variants: [{ size: 'S', color: 'Oq', q: 10 }, { size: 'M', color: "Ko'k", q: 8 }] },
+    { store: store1Id, wh: wh1Id, name: 'Denim Jinsi Kurtka', cat: 'cat-outerwear', brand: 'br-terra', sup: 'sup-1', unit: 'dona', collection: 'Kuz 2026', buy: 210000, sell: 365000, wholesale: 310000, variants: [{ size: 'M', color: "Ko'k", q: 7 }, { size: 'L', color: 'Qora', q: 3 }] },
+    { store: store1Id, wh: wh1Id, name: 'Charm Krossovka Urban', cat: 'cat-shoes', brand: 'br-terra', sup: 'sup-2', unit: 'juft', collection: 'Premium', photo: MEDIA.shoes, buy: 340000, sell: 550000, wholesale: 480000, variants: [{ size: '41', color: 'Oq', q: 8 }, { size: '42', color: 'Oq', q: 11 }, { size: '43', color: 'Oq', q: 5 }] },
+    { store: store1Id, wh: wh1Id, name: 'Zamsha Loferlar Klassik', cat: 'cat-shoes', brand: 'br-terra', sup: 'sup-2', unit: 'juft', collection: 'Ofis', photo: MEDIA.shoes, buy: 290000, sell: 480000, wholesale: 410000, variants: [{ size: '40', color: 'Jigarrang', q: 6 }, { size: '42', color: 'Qora', q: 7 }] },
+    { store: store1Id, wh: wh1Id, name: 'Yugurish Krossovkasi AirFlex', cat: 'cat-shoes', brand: 'br-terra', sup: 'sup-2', unit: 'juft', collection: 'Sport', buy: 230000, sell: 390000, wholesale: 330000, variants: [{ size: '39', color: 'Kulrang', q: 9 }, { size: '41', color: 'Qora', q: 10 }] },
+    { store: store1Id, wh: wh1Id, name: 'Qishki Chelsi Etik', cat: 'cat-shoes', brand: 'br-terra', sup: 'sup-2', unit: 'juft', collection: 'Qish 2026', buy: 410000, sell: 680000, wholesale: 580000, variants: [{ size: '42', color: 'Qora', q: 4 }, { size: '43', color: 'Jigarrang', q: 2 }] },
+    { store: store1Id, wh: wh1Id, name: "Oxford Oq Klassik Ko'ylak", cat: 'cat-shirts', brand: 'br-aura', sup: 'sup-1', unit: 'dona', collection: 'Ofis', photo: MEDIA.apparel, buy: 120000, sell: 215000, wholesale: 175000, variants: [{ size: 'M', color: 'Oq', q: 15 }, { size: 'L', color: 'Oq', q: 12 }] },
+    { store: store1Id, wh: wh1Id, name: 'Ikki Tugmali Klassik Kostyum', cat: 'cat-suits', brand: 'br-aura', sup: 'sup-2', unit: 'dona', collection: 'Premium', photo: MEDIA.apparel, buy: 650000, sell: 1150000, wholesale: 950000, variants: [{ size: '48', color: 'Qora', q: 6 }, { size: '50', color: "Ko'k", q: 5 }, { size: '52', color: 'Kulrang', q: 4 }] },
+    { store: store1Id, wh: wh1Id, name: 'Smart Casual Pijak', cat: 'cat-suits', brand: 'br-nordic', sup: 'sup-2', unit: 'dona', collection: 'Ofis', buy: 390000, sell: 680000, wholesale: 560000, variants: [{ size: '48', color: "Ko'k", q: 7 }, { size: '50', color: 'Kulrang', q: 6 }] },
+    { store: store1Id, wh: wh1Id, name: 'Polo Yoqali Futbolka Lacoste Usul', cat: 'cat-tshirts', brand: 'br-aura', sup: 'sup-1', unit: 'dona', collection: 'Bahor-Yoz', buy: 85000, sell: 165000, wholesale: 135000, variants: [{ size: 'M', color: 'Yashil', q: 16 }, { size: 'L', color: 'Qora', q: 14 }, { size: 'XL', color: 'Oq', q: 10 }] },
+    { store: store1Id, wh: wh1Id, name: 'Streych Jinsi Shim Slim', cat: 'cat-pants', brand: 'br-terra', sup: 'sup-2', unit: 'dona', collection: 'Kundalik', buy: 145000, sell: 265000, wholesale: 215000, variants: [{ size: '31', color: "Ko'k", q: 12 }, { size: '32', color: 'Qora', q: 15 }, { size: '34', color: "Ko'k", q: 10 }] },
+    { store: store1Id, wh: wh1Id, name: 'Tabiiy Charm Kamar', cat: 'cat-accessories', brand: 'br-chorsu', sup: 'sup-1', unit: 'dona', collection: 'Klassik', buy: 68000, sell: 135000, wholesale: 110000, variants: [{ size: '115cm', color: 'Qora', q: 20 }, { size: '120cm', color: 'Jigarrang', q: 14 }] },
+
+    // Mingbuloq Branch Products
+    { store: store2Id, wh: wh2Id, name: 'Slim Fit Rubashka Moviy', cat: 'cat-shirts', brand: 'br-aura', sup: 'sup-3', unit: 'dona', collection: 'Ofis', photo: MEDIA.apparel, buy: 110000, sell: 195000, wholesale: 160000, variants: [{ size: 'M', color: "Ko'k", q: 14 }, { size: 'XL', color: "Ko'k", q: 9 }] },
+    { store: store2Id, wh: wh2Id, name: "Kletkali Flanel Ko'ylak", cat: 'cat-shirts', brand: 'br-chorsu', sup: 'sup-3', unit: 'dona', collection: 'Kuz 2026', buy: 125000, sell: 225000, wholesale: 185000, variants: [{ size: 'L', color: 'Qizil', q: 10 }, { size: 'XL', color: 'Qora', q: 8 }] },
+    { store: store2Id, wh: wh2Id, name: "Troika To'y Kostyum-Shim", cat: 'cat-suits', brand: 'br-nordic', sup: 'sup-3', unit: 'dona', collection: 'Premium', photo: MEDIA.apparel, buy: 820000, sell: 1450000, wholesale: 1200000, variants: [{ size: '50', color: 'Qora', q: 5 }, { size: '52', color: 'Bej', q: 4 }] },
+    { store: store2Id, wh: wh2Id, name: 'Bazaviy V-Yoqa Futbolka', cat: 'cat-tshirts', brand: 'br-chorsu', sup: 'sup-3', unit: 'dona', collection: 'Bazaviy', buy: 42000, sell: 85000, wholesale: 68000, variants: [{ size: 'M', color: 'Qora', q: 25 }, { size: 'L', color: 'Oq', q: 22 }] },
+    { store: store2Id, wh: wh2Id, name: 'Klassik Ofis Shim (Shirstoy)', cat: 'cat-pants', brand: 'br-aura', sup: 'sup-3', unit: 'dona', collection: 'Ofis', buy: 160000, sell: 290000, wholesale: 240000, variants: [{ size: '32', color: 'Qora', q: 11 }, { size: '34', color: 'Kulrang', q: 9 }] },
+    { store: store2Id, wh: wh2Id, name: 'Minimalist Charm Hamyon', cat: 'cat-accessories', brand: 'br-chorsu', sup: 'sup-4', unit: 'dona', collection: 'Klassik', buy: 82000, sell: 160000, wholesale: 130000, variants: [{ size: 'Standart', color: 'Qora', q: 16 }] },
+    { store: store2Id, wh: wh2Id, name: 'Ipak Galstuk va Babochka', cat: 'cat-accessories', brand: 'br-nordic', sup: 'sup-4', unit: 'dona', collection: 'Ofis', buy: 45000, sell: 95000, wholesale: 75000, variants: [{ size: 'Standart', color: 'Qora', q: 18 }, { size: 'Standart', color: 'Qizil', q: 12 }] },
+    { store: store2Id, wh: wh2Id, name: "Kargo Cho'ntakli Shim", cat: 'cat-pants', brand: 'br-samarkand', sup: 'sup-3', unit: 'dona', collection: 'Sport', buy: 135000, sell: 245000, wholesale: 195000, variants: [{ size: '32', color: 'Yashil', q: 10 }, { size: '34', color: 'Qora', q: 8 }] },
+    { store: store2Id, wh: wh2Id, name: 'Kapishonli Flis Tolstovka (Hoodie)', cat: 'cat-knitwear', brand: 'br-chorsu', sup: 'sup-3', unit: 'dona', collection: 'Kuz-Qish 2026', buy: 135000, sell: 240000, wholesale: 195000, variants: [{ size: 'M', color: 'Qora', q: 14 }, { size: 'L', color: 'Kulrang', q: 12 }] },
+    { store: store2Id, wh: wh2Id, name: 'Vodolazka (Baland Yoqali Sviter)', cat: 'cat-knitwear', brand: 'br-aura', sup: 'sup-3', unit: 'dona', collection: 'Kuz-Qish 2026', buy: 98000, sell: 185000, wholesale: 150000, variants: [{ size: 'M', color: 'Qora', q: 20 }, { size: 'L', color: 'Bej', q: 14 }] },
+    { store: store2Id, wh: wh2Id, name: 'Kardigan Tugmali Jemfer', cat: 'cat-knitwear', brand: 'br-samarkand', sup: 'sup-3', unit: 'dona', collection: 'Kuz 2026', buy: 165000, sell: 295000, wholesale: 245000, variants: [{ size: 'L', color: "Ko'k", q: 9 }, { size: 'XL', color: 'Jigarrang', q: 7 }] },
+    { store: store2Id, wh: wh2Id, name: 'Drapp Qishki Palto Klassik', cat: 'cat-outerwear', brand: 'br-nordic', sup: 'sup-3', unit: 'dona', collection: 'Qish 2026', buy: 520000, sell: 890000, wholesale: 740000, variants: [{ size: '48', color: 'Qora', q: 6 }, { size: '50', color: 'Bej', q: 5 }] },
+    { store: store2Id, wh: wh2Id, name: "Shamolto'sar Bomber Kurtka", cat: 'cat-outerwear', brand: 'br-terra', sup: 'sup-3', unit: 'dona', collection: 'Bahor-Kuz', buy: 240000, sell: 420000, wholesale: 350000, variants: [{ size: 'M', color: 'Qora', q: 11 }, { size: 'L', color: 'Yashil', q: 9 }] },
+    { store: store2Id, wh: wh2Id, name: "Erkaklar Paypoq To'plami (5 juft)", cat: 'cat-accessories', brand: 'br-chorsu', sup: 'sup-4', unit: 'quti', collection: 'Bazaviy', buy: 32000, sell: 65000, wholesale: 50000, variants: [{ size: '41-45', color: 'Qora', q: 35 }] },
   ];
 
   const products: Product[] = [];
@@ -339,57 +460,28 @@ export function createSeedDatabase(): DatabaseSnapshot {
       const barcode = generateEAN13(100000000 + pIdx * 100 + vIdx * 7);
       const sku = `SBO-${String(pIdx + 1).padStart(3, '0')}-${vIdx + 1}`;
 
-      // Warehouse 1 stock
       stockItems.push({
-        id: `stk-${variantId}-${wh1Id}`,
+        id: `stk-${variantId}-${rp.wh}`,
         productId,
         variantId,
-        warehouseId: wh1Id,
-        qty: rv.q1,
-        storeId: store1Id,
+        warehouseId: rp.wh,
+        qty: rv.q,
+        storeId: rp.store,
         createdAt: ts,
         updatedAt: ts,
         createdBy: 'usr-owner',
       });
       stockMovements.push({
-        id: `mov-init-${variantId}-1`,
+        id: `mov-init-${variantId}`,
         productId,
         variantId,
-        warehouseId: wh1Id,
+        warehouseId: rp.wh,
         type: 'kirim',
-        qtyDelta: rv.q1,
-        qtyAfter: rv.q1,
+        qtyDelta: rv.q,
+        qtyAfter: rv.q,
         unitCost: rp.buy,
-        note: 'Boshlang\'ich ombor qoldig\'i',
-        storeId: store1Id,
-        createdAt: ts,
-        updatedAt: ts,
-        createdBy: 'usr-owner',
-      });
-
-      // Warehouse 2 stock
-      stockItems.push({
-        id: `stk-${variantId}-${wh2Id}`,
-        productId,
-        variantId,
-        warehouseId: wh2Id,
-        qty: rv.q2,
-        storeId: store2Id,
-        createdAt: ts,
-        updatedAt: ts,
-        createdBy: 'usr-owner',
-      });
-      stockMovements.push({
-        id: `mov-init-${variantId}-2`,
-        productId,
-        variantId,
-        warehouseId: wh2Id,
-        type: 'kirim',
-        qtyDelta: rv.q2,
-        qtyAfter: rv.q2,
-        unitCost: rp.buy,
-        note: 'Boshlang\'ich filial qoldig\'i',
-        storeId: store2Id,
+        note: "Boshlang'ich filial ombor qoldig'i",
+        storeId: rp.store,
         createdAt: ts,
         updatedAt: ts,
         createdBy: 'usr-owner',
@@ -406,7 +498,7 @@ export function createSeedDatabase(): DatabaseSnapshot {
         wholesalePrice: rp.wholesale,
         minStock: 5,
         barcodes: [barcode],
-        storeId: store1Id,
+        storeId: rp.store,
         createdAt: ts,
         updatedAt: ts,
         createdBy: 'usr-owner',
@@ -426,7 +518,7 @@ export function createSeedDatabase(): DatabaseSnapshot {
       tags: [rp.collection],
       isPublishedOnline: true,
       variants,
-      storeId: store1Id,
+      storeId: rp.store,
       createdAt: ts,
       updatedAt: ts,
       createdBy: 'usr-owner',
@@ -436,7 +528,7 @@ export function createSeedDatabase(): DatabaseSnapshot {
   const customerNames = [
     ['Alisher Vohidov', '+998901234501', 'vip', 'male', 4850000, 14, 0],
     ['Kamola Mirzayeva', '+998901234502', 'vip', 'female', 6200000, 19, 320000],
-    ['Rustam Jo\'rayev', '+998911234503', 'regular', 'male', 1850000, 6, 0],
+    ["Rustam Jo'rayev", '+998911234503', 'regular', 'male', 1850000, 6, 0],
     ['Nilufar Saidova', '+998931234504', 'vip', 'female', 5100000, 15, 0],
     ['Farrux Tursunov', '+998941234505', 'regular', 'male', 1420000, 5, 180000],
     ['Zarina Xasanova', '+998951234506', 'regular', 'female', 2340000, 8, 0],
@@ -447,7 +539,7 @@ export function createSeedDatabase(): DatabaseSnapshot {
     ['Dostonbek Rasulov', '+998931234511', 'regular', 'male', 1290000, 4, 0],
     ['Shahnoza Karimova', '+998941234512', 'new', 'female', 390000, 1, 0],
     ['Javohir Sobirov', '+998951234513', 'sleeping', 'male', 650000, 2, 120000],
-    ['Aziza Yo\'ldosheva', '+998971234514', 'regular', 'female', 2780000, 9, 0],
+    ["Aziza Yo'ldosheva", '+998971234514', 'regular', 'female', 2780000, 9, 0],
     ['Bekzod Olimov', '+998991234515', 'regular', 'male', 1640000, 5, 0],
     ['Lola Qosimova', '+998901234516', 'vip', 'female', 4120000, 12, 0],
     ['Sanjar Murodov', '+998911234517', 'new', 'male', 245000, 1, 0],
@@ -463,6 +555,7 @@ export function createSeedDatabase(): DatabaseSnapshot {
 
   customerNames.forEach(([name, phone, seg, gender, spent, orders, debt], i) => {
     const cid = `cust-${String(i + 1).padStart(2, '0')}`;
+    const cStore = i % 2 === 0 ? store1Id : store2Id;
     const lastDays = seg === 'sleeping' ? 45 + i : seg === 'new' ? 2 : 1 + (i % 10);
     customers.push({
       id: cid,
@@ -476,7 +569,7 @@ export function createSeedDatabase(): DatabaseSnapshot {
       ordersCount: orders,
       lastPurchaseAt: daysAgo(lastDays),
       debtBalance: debt,
-      storeId: i % 2 === 0 ? store1Id : store2Id,
+      storeId: cStore,
       createdAt: ts,
       updatedAt: daysAgo(lastDays),
       createdBy: 'usr-cashier',
@@ -494,7 +587,7 @@ export function createSeedDatabase(): DatabaseSnapshot {
       pointsBalance: pts,
       cardNumber: `SHU-${1001 + i}`,
       expiresAt: daysAhead(120),
-      storeId: store1Id,
+      storeId: cStore,
       createdAt: ts,
       updatedAt: daysAgo(lastDays),
       createdBy: 'usr-cashier',
@@ -507,7 +600,7 @@ export function createSeedDatabase(): DatabaseSnapshot {
       points: pts,
       expiresAt: daysAhead(120),
       note: 'Xarid uchun keshbek',
-      storeId: store1Id,
+      storeId: cStore,
       createdAt: daysAgo(lastDays),
       updatedAt: daysAgo(lastDays),
       createdBy: 'usr-cashier',
@@ -523,7 +616,7 @@ export function createSeedDatabase(): DatabaseSnapshot {
         dueDate: daysAhead(14),
         status: 'open',
         payments: [],
-        storeId: i % 2 === 0 ? store1Id : store2Id,
+        storeId: cStore,
         createdAt: daysAgo(4),
         updatedAt: daysAgo(4),
         createdBy: 'usr-cashier',
@@ -531,53 +624,53 @@ export function createSeedDatabase(): DatabaseSnapshot {
     }
   });
 
-  // Historical Sales (last 10 days + today + 2 deferred) so Dashboard charts and Tranzaksiyalar list shine
+  // Historical Sales matching each branch's isolated products
   const sales: Sale[] = [];
   const saleTemplates: {
     d: number;
     h: number;
-    s: string;
-    wh: string;
     pIdx: number;
     qty: number;
     method: 'cash' | 'card' | 'uzcard' | 'humo' | 'payme' | 'click' | 'uzum';
     cust: number;
     deferred?: boolean;
   }[] = [
-    { d: 0, h: 16, s: store1Id, wh: wh1Id, pIdx: 4, qty: 1, method: 'cash', cust: 4, deferred: true },
-    { d: 0, h: 15, s: store2Id, wh: wh2Id, pIdx: 12, qty: 2, method: 'uzcard', cust: 6, deferred: true },
-    { d: 0, h: 10, s: store1Id, wh: wh1Id, pIdx: 0, qty: 1, method: 'uzcard', cust: 0 },
-    { d: 0, h: 11, s: store1Id, wh: wh1Id, pIdx: 6, qty: 1, method: 'cash', cust: 1 },
-    { d: 0, h: 12, s: store2Id, wh: wh2Id, pIdx: 10, qty: 2, method: 'payme', cust: 3 },
-    { d: 0, h: 14, s: store1Id, wh: wh1Id, pIdx: 15, qty: 1, method: 'click', cust: 7 },
-    { d: 0, h: 15, s: store1Id, wh: wh1Id, pIdx: 3, qty: 3, method: 'humo', cust: 2 },
-    { d: 0, h: 17, s: store2Id, wh: wh2Id, pIdx: 11, qty: 2, method: 'cash', cust: 5 },
-    { d: 1, h: 11, s: store1Id, wh: wh1Id, pIdx: 1, qty: 2, method: 'uzcard', cust: 4 },
-    { d: 1, h: 15, s: store2Id, wh: wh2Id, pIdx: 7, qty: 1, method: 'cash', cust: 9 },
-    { d: 1, h: 18, s: store1Id, wh: wh1Id, pIdx: 21, qty: 1, method: 'card', cust: 11 },
-    { d: 2, h: 13, s: store1Id, wh: wh1Id, pIdx: 16, qty: 2, method: 'humo', cust: 10 },
-    { d: 2, h: 18, s: store1Id, wh: wh1Id, pIdx: 18, qty: 1, method: 'uzum', cust: 13 },
-    { d: 3, h: 12, s: store2Id, wh: wh2Id, pIdx: 0, qty: 2, method: 'cash', cust: 15 },
-    { d: 4, h: 16, s: store1Id, wh: wh1Id, pIdx: 6, qty: 2, method: 'uzcard', cust: 0 },
-    { d: 5, h: 14, s: store1Id, wh: wh1Id, pIdx: 14, qty: 1, method: 'payme', cust: 7 },
-    { d: 6, h: 17, s: store2Id, wh: wh2Id, pIdx: 23, qty: 2, method: 'cash', cust: 18 },
-    { d: 7, h: 13, s: store1Id, wh: wh1Id, pIdx: 24, qty: 1, method: 'click', cust: 3 },
-    { d: 8, h: 11, s: store2Id, wh: wh2Id, pIdx: 25, qty: 3, method: 'humo', cust: 14 },
-    { d: 9, h: 15, s: store1Id, wh: wh1Id, pIdx: 27, qty: 4, method: 'cash', cust: 8 },
-    { d: 10, h: 12, s: store1Id, wh: wh1Id, pIdx: 29, qty: 2, method: 'card', cust: 16 },
-    { d: 11, h: 16, s: store2Id, wh: wh2Id, pIdx: 20, qty: 2, method: 'cash', cust: 12 },
+    { d: 0, h: 16, pIdx: 4, qty: 1, method: 'cash', cust: 4, deferred: true },
+    { d: 0, h: 15, pIdx: 16, qty: 2, method: 'uzcard', cust: 7, deferred: true },
+    { d: 0, h: 10, pIdx: 0, qty: 1, method: 'uzcard', cust: 0 },
+    { d: 0, h: 11, pIdx: 6, qty: 1, method: 'cash', cust: 2 },
+    { d: 0, h: 12, pIdx: 17, qty: 2, method: 'payme', cust: 3 },
+    { d: 0, h: 14, pIdx: 15, qty: 1, method: 'click', cust: 8 },
+    { d: 0, h: 15, pIdx: 3, qty: 3, method: 'humo', cust: 6 },
+    { d: 0, h: 17, pIdx: 19, qty: 2, method: 'cash', cust: 5 },
+    { d: 1, h: 11, pIdx: 1, qty: 2, method: 'uzcard', cust: 4 },
+    { d: 1, h: 15, pIdx: 20, qty: 1, method: 'cash', cust: 9 },
+    { d: 1, h: 18, pIdx: 11, qty: 1, method: 'card', cust: 10 },
+    { d: 2, h: 13, pIdx: 12, qty: 2, method: 'humo', cust: 12 },
+    { d: 2, h: 18, pIdx: 21, qty: 1, method: 'uzum', cust: 13 },
+    { d: 3, h: 12, pIdx: 22, qty: 2, method: 'cash', cust: 15 },
+    { d: 4, h: 16, pIdx: 7, qty: 2, method: 'uzcard', cust: 0 },
+    { d: 5, h: 14, pIdx: 14, qty: 1, method: 'payme', cust: 14 },
+    { d: 6, h: 17, pIdx: 23, qty: 2, method: 'cash', cust: 17 },
+    { d: 7, h: 13, pIdx: 24, qty: 1, method: 'click', cust: 3 },
+    { d: 8, h: 11, pIdx: 25, qty: 3, method: 'humo', cust: 11 },
+    { d: 9, h: 15, pIdx: 27, qty: 2, method: 'cash', cust: 19 },
+    { d: 10, h: 12, pIdx: 29, qty: 2, method: 'card', cust: 16 },
+    { d: 11, h: 16, pIdx: 20, qty: 2, method: 'cash', cust: 1 },
   ];
 
   saleTemplates.forEach((st, idx) => {
     const prod = products[st.pIdx];
     const variant = prod.variants[0];
+    const sId = prod.storeId;
+    const whId = sId === store1Id ? wh1Id : wh2Id;
     const unitPrice = variant.retailPrice;
     const lineTotal = unitPrice * st.qty;
     const costTotal = variant.purchasePrice * st.qty;
     const createdAt = daysAgo(st.d, st.h, 15 + (idx % 30));
     const saleId = `sale-${String(idx + 1).padStart(3, '0')}`;
     const cust = customers[st.cust];
-    const storeCode = st.s === store1Id ? '01' : '02';
+    const storeCode = sId === store1Id ? '01' : '02';
     const seq = String(270 + (saleTemplates.length - idx)).padStart(4, '0');
     const receiptNumber = `#${storeCode}010104${seq}`;
     const isDeferred = Boolean(st.deferred);
@@ -585,10 +678,10 @@ export function createSeedDatabase(): DatabaseSnapshot {
     sales.push({
       id: saleId,
       receiptNumber,
-      warehouseId: st.wh,
-      shiftId: !isDeferred && st.d === 0 ? 'shift-active-1' : undefined,
-      cashierId: st.s === store1Id ? 'usr-cashier' : 'usr-manager',
-      cashierName: st.s === store1Id ? 'Madina Toshmatova' : 'Jasur Alimov',
+      warehouseId: whId,
+      shiftId: !isDeferred && st.d === 0 ? (sId === store1Id ? 'shift-active-trq' : 'shift-active-mng') : undefined,
+      cashierId: sId === store1Id ? 'usr-cashier' : 'usr-mng-cashier1',
+      cashierName: sId === store1Id ? 'Madina Toshmatova' : 'Dilnoza Karimova',
       customerId: cust.id,
       customerName: cust.name,
       items: [
@@ -623,10 +716,10 @@ export function createSeedDatabase(): DatabaseSnapshot {
               saleId,
               method: st.method,
               amount: lineTotal,
-              storeId: st.s,
+              storeId: sId,
               createdAt,
               updatedAt: createdAt,
-              createdBy: 'usr-cashier',
+              createdBy: sId === store1Id ? 'usr-cashier' : 'usr-mng-cashier1',
             },
           ],
       paidAmount: isDeferred ? 0 : lineTotal,
@@ -634,24 +727,24 @@ export function createSeedDatabase(): DatabaseSnapshot {
       paidAt: isDeferred ? undefined : createdAt,
       status: isDeferred ? 'deferred' : 'completed',
       fiscalStatus: 'not_configured',
-      storeId: st.s,
+      storeId: sId,
       createdAt,
       updatedAt: createdAt,
-      createdBy: 'usr-cashier',
+      createdBy: sId === store1Id ? 'usr-cashier' : 'usr-mng-cashier1',
     });
   });
 
   const cashShifts: CashShift[] = [
     {
-      id: 'shift-active-1',
-      number: 'SM-042',
+      id: 'shift-active-trq',
+      number: 'SM-TRQ-042',
       cashierId: 'usr-cashier',
       cashierName: 'Madina Toshmatova',
       openedAt: daysAgo(0, 9, 0),
       startingCash: 500000,
       cashSalesTotal: 550000,
-      cardSalesTotal: 1185000,
-      otherSalesTotal: 440000,
+      cardSalesTotal: 745000,
+      otherSalesTotal: 135000,
       cashRefundsTotal: 0,
       cashInTotal: 0,
       cashOutTotal: 0,
@@ -662,25 +755,49 @@ export function createSeedDatabase(): DatabaseSnapshot {
       updatedAt: daysAgo(0, 15, 0),
       createdBy: 'usr-cashier',
     },
+    {
+      id: 'shift-active-mng',
+      number: 'SM-MNG-019',
+      cashierId: 'usr-mng-cashier1',
+      cashierName: 'Dilnoza Karimova',
+      openedAt: daysAgo(0, 9, 0),
+      startingCash: 350000,
+      cashSalesTotal: 170000,
+      cardSalesTotal: 0,
+      otherSalesTotal: 450000,
+      cashRefundsTotal: 0,
+      cashInTotal: 0,
+      cashOutTotal: 0,
+      expectedCash: 520000,
+      status: 'open',
+      storeId: store2Id,
+      createdAt: daysAgo(0, 9, 0),
+      updatedAt: daysAgo(0, 17, 0),
+      createdBy: 'usr-mng-cashier1',
+    },
   ];
 
   const cashOperations: CashOperation[] = [];
 
   const accounts: Account[] = [
-    { id: 'acc-cash-1', name: 'Asosiy Kassa (Naqd)', type: 'cash', balance: 4850000, isDefault: true, storeId: store1Id, createdAt: ts, updatedAt: now.toISOString(), createdBy: 'usr-owner' },
-    { id: 'acc-card-1', name: 'Uzcard / Humo Terminal', type: 'card_terminal', balance: 12450000, storeId: store1Id, createdAt: ts, updatedAt: now.toISOString(), createdBy: 'usr-owner' },
-    { id: 'acc-bank-1', name: 'Ipak Yo\'li Bank H/R', type: 'bank', balance: 28900000, storeId: store1Id, createdAt: ts, updatedAt: now.toISOString(), createdBy: 'usr-owner' },
+    { id: 'acc-cash-trq', name: "To'raqo'rg'on Kassa (Naqd)", type: 'cash', balance: 4850000, isDefault: true, storeId: store1Id, createdAt: ts, updatedAt: now.toISOString(), createdBy: 'usr-owner' },
+    { id: 'acc-card-trq', name: "To'raqo'rg'on Uzcard / Humo", type: 'card_terminal', balance: 12450000, storeId: store1Id, createdAt: ts, updatedAt: now.toISOString(), createdBy: 'usr-owner' },
+    { id: 'acc-bank-trq', name: "To'raqo'rg'on Bank H/R", type: 'bank', balance: 28900000, storeId: store1Id, createdAt: ts, updatedAt: now.toISOString(), createdBy: 'usr-owner' },
+    { id: 'acc-cash-mng', name: 'Mingbuloq Kassa (Naqd)', type: 'cash', balance: 3250000, isDefault: true, storeId: store2Id, createdAt: ts, updatedAt: now.toISOString(), createdBy: 'usr-owner' },
+    { id: 'acc-card-mng', name: 'Mingbuloq Uzcard / Humo', type: 'card_terminal', balance: 8100000, storeId: store2Id, createdAt: ts, updatedAt: now.toISOString(), createdBy: 'usr-owner' },
+    { id: 'acc-bank-mng', name: 'Mingbuloq Bank H/R', type: 'bank', balance: 14500000, storeId: store2Id, createdAt: ts, updatedAt: now.toISOString(), createdBy: 'usr-owner' },
   ];
 
   const expenses: Expense[] = [
-    { id: 'exp-1', accountId: 'acc-bank-1', category: 'rent', amount: 8500000, description: 'Chilonzor do\'koni oylik ijarasi', isRecurring: true, recurringDay: 5, date: daysAgo(8), storeId: store1Id, createdAt: daysAgo(8), updatedAt: daysAgo(8), createdBy: 'usr-owner' },
-    { id: 'exp-2', accountId: 'acc-cash-1', category: 'utilities', amount: 940000, description: 'Elektr energiya va internet', isRecurring: true, recurringDay: 10, date: daysAgo(4), storeId: store1Id, createdAt: daysAgo(4), updatedAt: daysAgo(4), createdBy: 'usr-admin' },
-    { id: 'exp-3', accountId: 'acc-cash-1', category: 'delivery', amount: 380000, description: 'Tovar tashish va kuryerlik', isRecurring: false, date: daysAgo(2), storeId: store2Id, createdAt: daysAgo(2), updatedAt: daysAgo(2), createdBy: 'usr-manager' },
+    { id: 'exp-1', accountId: 'acc-bank-trq', category: 'rent', amount: 6500000, description: "To'raqo'rg'on filiali oylik ijarasi", isRecurring: true, recurringDay: 5, date: daysAgo(8), storeId: store1Id, createdAt: daysAgo(8), updatedAt: daysAgo(8), createdBy: 'usr-owner' },
+    { id: 'exp-2', accountId: 'acc-cash-trq', category: 'utilities', amount: 740000, description: 'Elektr energiya va internet', isRecurring: true, recurringDay: 10, date: daysAgo(4), storeId: store1Id, createdAt: daysAgo(4), updatedAt: daysAgo(4), createdBy: 'usr-admin' },
+    { id: 'exp-3', accountId: 'acc-cash-mng', category: 'delivery', amount: 380000, description: 'Mingbuloq tovar tashish xarajati', isRecurring: false, date: daysAgo(2), storeId: store2Id, createdAt: daysAgo(2), updatedAt: daysAgo(2), createdBy: 'usr-mng-manager' },
   ];
 
   const transactions: Transaction[] = [
-    { id: 'trx-1', accountId: 'acc-bank-1', type: 'expense', category: 'rent', amount: 8500000, description: 'Chilonzor do\'koni ijarasi', storeId: store1Id, createdAt: daysAgo(8), updatedAt: daysAgo(8), createdBy: 'usr-owner' },
-    { id: 'trx-2', accountId: 'acc-cash-1', type: 'expense', category: 'utilities', amount: 940000, description: 'Kommunal to\'lovlar', storeId: store1Id, createdAt: daysAgo(4), updatedAt: daysAgo(4), createdBy: 'usr-admin' },
+    { id: 'trx-1', accountId: 'acc-bank-trq', type: 'expense', category: 'rent', amount: 6500000, description: "To'raqo'rg'on filiali ijarasi", storeId: store1Id, createdAt: daysAgo(8), updatedAt: daysAgo(8), createdBy: 'usr-owner' },
+    { id: 'trx-2', accountId: 'acc-cash-trq', type: 'expense', category: 'utilities', amount: 740000, description: "Kommunal to'lovlar", storeId: store1Id, createdAt: daysAgo(4), updatedAt: daysAgo(4), createdBy: 'usr-admin' },
+    { id: 'trx-3', accountId: 'acc-cash-mng', type: 'expense', category: 'delivery', amount: 380000, description: 'Mingbuloq kuryerlik xarajati', storeId: store2Id, createdAt: daysAgo(2), updatedAt: daysAgo(2), createdBy: 'usr-mng-manager' },
   ];
 
   const purchaseReceipts: PurchaseReceipt[] = [
@@ -723,22 +840,28 @@ export function createSeedDatabase(): DatabaseSnapshot {
 
   const promoCodes: PromoCode[] = [
     { id: 'promo-1', code: 'YANGI10', discountType: 'percent', discountValue: 10, minOrderAmount: 200000, maxUses: 100, usedCount: 14, expiresAt: daysAhead(60), isActive: true, storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
-    { id: 'promo-2', code: 'SHU50000', discountType: 'fixed', discountValue: 50000, minOrderAmount: 400000, maxUses: 50, usedCount: 6, expiresAt: daysAhead(30), isActive: true, storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'promo-2', code: 'SHU50000', discountType: 'fixed', discountValue: 50000, minOrderAmount: 400000, maxUses: 50, usedCount: 6, expiresAt: daysAhead(30), isActive: true, storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
   ];
 
   const employees: Employee[] = [
-    { id: 'emp-owner', userId: 'usr-owner', name: 'Sardorbek Karimov', phone: '+998889260404', roleId: 'owner', baseSalary: 0, commissionPercent: 0, schedule: 'Doimiy boshqaruv', hiredAt: daysAgo(365), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
-    { id: 'emp-admin', userId: 'usr-admin', name: 'Dilnoza Rahimova', phone: '+998902223344', roleId: 'admin', baseSalary: 6500000, commissionPercent: 1.0, schedule: 'Du–Sha, 09:00–19:00', hiredAt: daysAgo(240), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
-    { id: 'emp-1', userId: 'usr-manager', name: 'Jasur Alimov', phone: '+998903334455', roleId: 'manager', baseSalary: 5500000, commissionPercent: 1.5, schedule: 'Du–Sha, 09:00–19:00', hiredAt: daysAgo(180), storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
-    { id: 'emp-2', userId: 'usr-cashier', name: 'Madina Toshmatova', phone: '+998904445566', roleId: 'cashier', baseSalary: 3800000, commissionPercent: 2.0, schedule: '2/2 smena, 09:00–21:00', hiredAt: daysAgo(120), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
-    { id: 'emp-3', userId: 'usr-warehouse', name: 'Bobur Xolmatov', phone: '+998905556677', roleId: 'warehouse', baseSalary: 4200000, commissionPercent: 0.5, schedule: 'Du–Ju, 09:00–18:00', hiredAt: daysAgo(90), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'emp-owner', userId: 'usr-owner', name: 'ISLOMBEK', phone: '+998889260404', login: 'islombek', position: "Do'kon egasi", roleId: 'owner', primaryStoreId: store1Id, assignedStoreIds: [store1Id, store2Id], sellStoreIds: [store1Id, store2Id], baseSalary: 0, commissionPercent: 0, schedule: 'Doimiy boshqaruv', hiredAt: daysAgo(365), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'emp-admin', userId: 'usr-admin', name: 'OTABEK', phone: '+998902223344', login: 'otabek', position: 'Bosh administrator', roleId: 'admin', primaryStoreId: store1Id, assignedStoreIds: [store1Id, store2Id], sellStoreIds: [store1Id, store2Id], baseSalary: 7000000, commissionPercent: 1.0, schedule: 'Du–Sha, 09:00–19:00', hiredAt: daysAgo(240), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'emp-1', userId: 'usr-manager', name: 'Jasur Alimov', phone: '+998903334455', login: 'jasur_trq', position: 'Filial menejeri', roleId: 'manager', primaryStoreId: store1Id, assignedStoreIds: [store1Id], sellStoreIds: [store1Id], baseSalary: 5500000, commissionPercent: 1.5, schedule: 'Du–Sha, 09:00–19:00', hiredAt: daysAgo(180), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'emp-2', userId: 'usr-cashier', name: 'Madina Toshmatova', phone: '+998904445566', login: 'madina_trq', position: 'Katta kassir', roleId: 'cashier', primaryStoreId: store1Id, assignedStoreIds: [store1Id], sellStoreIds: [store1Id], baseSalary: 3800000, commissionPercent: 2.0, schedule: '2/2 smena, 09:00–21:00', hiredAt: daysAgo(120), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'emp-3', userId: 'usr-warehouse', name: 'Bobur Xolmatov', phone: '+998905556677', login: 'bobur_trq', position: 'Omborchi', roleId: 'warehouse', primaryStoreId: store1Id, assignedStoreIds: [store1Id], sellStoreIds: [], baseSalary: 4200000, commissionPercent: 0.5, schedule: 'Du–Ju, 09:00–18:00', hiredAt: daysAgo(90), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'emp-4', userId: 'usr-trq-seller', name: 'Azizbek Rahmonov', phone: '+998906667788', login: 'azizbek_trq', position: 'Sotuvchi-kassir', roleId: 'cashier', primaryStoreId: store1Id, assignedStoreIds: [store1Id], sellStoreIds: [store1Id], baseSalary: 3500000, commissionPercent: 2.0, schedule: 'Du–Sha, 09:00–20:00', hiredAt: daysAgo(80), storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'emp-5', userId: 'usr-mng-manager', name: 'Sardorbek Rustamov', phone: '+998913334411', login: 'sardor_mng', position: 'Filial menejeri', roleId: 'manager', primaryStoreId: store2Id, assignedStoreIds: [store2Id], sellStoreIds: [store2Id], baseSalary: 5500000, commissionPercent: 1.5, schedule: 'Du–Sha, 09:00–19:00', hiredAt: daysAgo(150), storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'emp-6', userId: 'usr-mng-cashier1', name: 'Dilnoza Karimova', phone: '+998914445522', login: 'dilnoza_mng', position: 'Katta kassir', roleId: 'cashier', primaryStoreId: store2Id, assignedStoreIds: [store2Id], sellStoreIds: [store2Id], baseSalary: 3800000, commissionPercent: 2.0, schedule: '2/2 smena, 09:00–21:00', hiredAt: daysAgo(100), storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'emp-7', userId: 'usr-mng-cashier2', name: 'Dostonbek Qodirov', phone: '+998915556633', login: 'doston_mng', position: 'Sotuvchi-kassir', roleId: 'cashier', primaryStoreId: store2Id, assignedStoreIds: [store2Id], sellStoreIds: [store2Id], baseSalary: 3500000, commissionPercent: 2.0, schedule: 'Du–Sha, 09:00–20:00', hiredAt: daysAgo(60), storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'emp-8', userId: 'usr-mng-warehouse', name: 'Shoxrux Olimov', phone: '+998916667744', login: 'shoxrux_mng', position: 'Omborchi', roleId: 'warehouse', primaryStoreId: store2Id, assignedStoreIds: [store2Id], sellStoreIds: [], baseSalary: 4200000, commissionPercent: 0.5, schedule: 'Du–Ju, 09:00–18:00', hiredAt: daysAgo(45), storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
   ];
 
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const targets: Target[] = [
     { id: 'tgt-store-1', month: monthKey, targetAmount: 85000000, storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'tgt-store-2', month: monthKey, targetAmount: 65000000, storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
     { id: 'tgt-emp-2', employeeId: 'emp-2', month: monthKey, targetAmount: 45000000, storeId: store1Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
-    { id: 'tgt-emp-1', employeeId: 'emp-1', month: monthKey, targetAmount: 40000000, storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
+    { id: 'tgt-emp-6', employeeId: 'emp-6', month: monthKey, targetAmount: 40000000, storeId: store2Id, createdAt: ts, updatedAt: ts, createdBy: 'usr-owner' },
   ];
 
   const onlineOrders: OnlineOrder[] = [
@@ -747,11 +870,11 @@ export function createSeedDatabase(): DatabaseSnapshot {
       orderNumber: 'WEB-204',
       customerName: 'Olimjon Bahromov',
       customerPhone: '+998908887766',
-      deliveryAddress: 'Toshkent, Yunusobod 11-kvartal, 23-uy',
+      deliveryAddress: "Namangan, To'raqo'rg'on, Mustaqillik ko'chasi 23",
       deliveryMethod: 'delivery',
       paymentMethod: 'cash_on_delivery',
       items: [
-        { productId: 'prod-07', variantId: 'prod-07-v1', productName: 'Charm Krossovka Urban', variantLabel: '41 / Oq-Qum', qty: 1, unitPrice: 550000, lineTotal: 550000 },
+        { productId: 'prod-07', variantId: 'prod-07-v1', productName: 'Charm Krossovka Urban', variantLabel: '41 / Oq', qty: 1, unitPrice: 550000, lineTotal: 550000 },
       ],
       totalAmount: 550000,
       status: 'new',
@@ -767,11 +890,11 @@ export function createSeedDatabase(): DatabaseSnapshot {
     {
       id: 'aud-1',
       userId: 'usr-owner',
-      userName: 'Sardorbek Karimov',
+      userName: 'ISLOMBEK',
       action: 'price_change',
       entityType: 'Product',
       entityId: 'prod-01',
-      summary: 'Jun Overshirt Kurtka narxi yangilandi: 440 000 -> 460 000 so\'m',
+      summary: "Jun Overshirt Kurtka narxi yangilandi: 440 000 -> 460 000 so'm",
       storeId: store1Id,
       createdAt: daysAgo(2, 11, 0),
       updatedAt: daysAgo(2, 11, 0),
@@ -790,7 +913,7 @@ export function createSeedDatabase(): DatabaseSnapshot {
     allowNegativeStock: false,
     discountApprovalThresholdPercent: 15,
     receiptWidth: '80mm',
-    receiptHeader: 'SHU BREND OMBOR\nChilonzor Flagman do\'koni\nTel: +998 71 200 11 22',
+    receiptHeader: "SHU BREND OMBOR\nSHU BREND TO'RAQO'RG'ON\nTel: +998 88 926 04 04",
     receiptFooter: "Xaridingiz uchun rahmat!\n14 kun ichida chek bilan almashtirish mumkin.",
     showReceiptQr: true,
     labelTemplate: '40x30',
@@ -814,13 +937,16 @@ export function createSeedDatabase(): DatabaseSnapshot {
   };
 
   return {
-    version: 1,
+    version: 2,
+    revision: 1,
     stores,
     warehouses,
     users,
     roles,
     categories,
     brands,
+    customSizes: [...DEFAULT_SIZES],
+    customColors: [...DEFAULT_COLORS],
     products,
     suppliers,
     stockItems,
@@ -846,6 +972,7 @@ export function createSeedDatabase(): DatabaseSnapshot {
     targets,
     onlineOrders,
     auditLogs,
+    deletedRecords: [],
     offlineQueue: [],
     settings,
   };

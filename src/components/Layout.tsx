@@ -86,6 +86,8 @@ export const Layout: React.FC = () => {
   const notify = useAppStore((s) => s.notify);
   const cartItems = useAppStore((s) => s.cartItems);
   const setSavatchaMenuOpen = useAppStore((s) => s.setSavatchaMenuOpen);
+  const wsConnected = useAppStore((s) => s.wsConnected);
+  const isOnline = useAppStore((s) => s.isOnline);
 
   const t = useT();
   const location = useLocation();
@@ -150,9 +152,9 @@ export const Layout: React.FC = () => {
   const activeStoreLabel =
     activeStoreId === 'all' ? t.common.allStores : activeStore?.name ?? db?.stores[0]?.name ?? t.common.store;
 
-  const handlePinSwitch = (e: React.FormEvent) => {
+  const handlePinSwitch = async (e: React.FormEvent) => {
     e.preventDefault();
-    const user = switchUserByPin(pinValue.trim());
+    const user = await switchUserByPin(pinValue.trim());
     if (!user) {
       setPinError(t.auth.invalidPin);
       return;
@@ -293,25 +295,41 @@ export const Layout: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              <span
+                title={!isOnline ? 'Oflayn rejim' : wsConnected ? 'Jonli sinxronlash faol' : 'Server bilan ulanilmoqda'}
+                className={`inline-block w-2 h-2 rounded-full shrink-0 ${
+                  !isOnline
+                    ? 'bg-amber-500'
+                    : wsConnected
+                    ? 'bg-emerald-500'
+                    : 'bg-slate-300 dark:bg-slate-600'
+                }`}
+              />
               {db && db.stores.length > 0 && (
                 <div className="hidden md:flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 h-9 bg-slate-50 dark:bg-slate-950">
                   <span
                     className="w-2 h-2 rounded-full shrink-0"
                     style={{ backgroundColor: activeStore?.color || '#2563EB' }}
                   />
-                  <select
-                    value={activeStoreId}
-                    onChange={(e) => setActiveStoreId(e.target.value)}
-                    aria-label={t.common.store}
-                    className="bg-transparent text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none"
-                  >
-                    <option value="all" className="dark:bg-slate-900">{t.common.allStores}</option>
-                    {db.stores.map((s) => (
-                      <option key={s.id} value={s.id} className="dark:bg-slate-900">
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                  {db.stores.length > 1 ? (
+                    <select
+                      value={activeStoreId}
+                      onChange={(e) => setActiveStoreId(e.target.value)}
+                      aria-label={t.common.store}
+                      className="bg-transparent text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none"
+                    >
+                      <option value="all" className="dark:bg-slate-900">{t.common.allStores}</option>
+                      {db.stores.map((s) => (
+                        <option key={s.id} value={s.id} className="dark:bg-slate-900">
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200">
+                      {db.stores[0].name}
+                    </span>
+                  )}
                 </div>
               )}
 
@@ -511,22 +529,24 @@ export const Layout: React.FC = () => {
 
               {storeSwitchOpen && db && (
                 <div className="px-3 py-2 bg-white dark:bg-slate-900 space-y-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveStoreId('all');
-                      setStoreSwitchOpen(false);
-                      setAvatarSheetOpen(false);
-                    }}
-                    className={`w-full px-3 py-2.5 rounded-xl text-left text-xs font-semibold flex items-center justify-between ${
-                      activeStoreId === 'all'
-                        ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400'
-                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <span>{t.common.allStores}</span>
-                    {activeStoreId === 'all' && <Check className="w-4 h-4" />}
-                  </button>
+                  {db.stores.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveStoreId('all');
+                        setStoreSwitchOpen(false);
+                        setAvatarSheetOpen(false);
+                      }}
+                      className={`w-full px-3 py-2.5 rounded-xl text-left text-xs font-semibold flex items-center justify-between ${
+                        activeStoreId === 'all'
+                          ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400'
+                          : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <span>{t.common.allStores}</span>
+                      {activeStoreId === 'all' && <Check className="w-4 h-4" />}
+                    </button>
+                  )}
                   {db.stores.map((s) => (
                     <button
                       key={s.id}
